@@ -1,0 +1,15 @@
+{
+  "name": "dashboard-jira",
+  "version": "1.0.0",
+  "description": "Dashboard de analise de atividades do Jira a partir de planilhas exportadas (base unificada)",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.5"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "import": "node tools/importar.js",
+    "reset": "node tools/importar.js --reset"
+  }
+}
