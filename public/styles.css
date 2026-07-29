@@ -89,7 +89,7 @@ input[type="date"] {
 
 /* ------------------------------------------------------------ slicers */
 
-.slicer { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; max-height: 260px; overflow: auto; }
+.slicer { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; max-height: 260px; Overflow: auto; }
 .slicer li {
   border: 1px solid var(--borda);
   border-radius: 4px;
@@ -99,7 +99,7 @@ input[type="date"] {
   background: var(--azul-claro);
   color: var(--azul-escuro);
   display: flex; justify-content: space-between; gap: 8px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; Overflow: hidden; text-Overflow: ellipsis;
   user-select: none;
 }
 .slicer li:hover { background: #cddcf1; }
@@ -123,7 +123,7 @@ input[type="date"] {
 /* ------------------------------------------------------------ graficos */
 
 .area-grafico { width: 100%; }
-.area-grafico svg { display: block; width: 100%; height: auto; overflow: visible; }
+.area-grafico svg { display: block; width: 100%; height: auto; Overflow: visible; }
 .area-grafico .vazio { color: var(--suave); font-size: 12.5px; padding: 24px 0; text-align: center; }
 
 .eixo { fill: var(--suave); font-size: 10px; }
@@ -141,7 +141,7 @@ input[type="date"] {
 .lista-panorama li:last-child { border-bottom: 0; }
 .lista-panorama b { font-variant-numeric: tabular-nums; color: var(--azul-escuro); }
 
-.rolagem { overflow: auto; max-height: 460px; border: 1px solid #e3eaf3; border-radius: 6px; }
+.rolagem { Overflow: auto; max-height: 460px; border: 1px solid #e3eaf3; border-radius: 6px; }
 .rolagem.baixa { max-height: 240px; }
 table { border-collapse: collapse; width: 100%; font-size: 12.2px; }
 thead th {
@@ -173,7 +173,7 @@ td.resumo { max-width: 380px; }
 .modal.oculto { display: none; }
 .modal-caixa {
   background: #fff; border-radius: 10px; padding: 20px;
-  width: min(560px, 100%); max-height: 88vh; overflow: auto;
+  width: min(560px, 100%); max-height: 88vh; Overflow: auto;
 }
 .modal-caixa h2 { margin: 0 0 8px; color: var(--azul-escuro); font-size: 16px; }
 .ajuda { color: var(--suave); font-size: 12.5px; margin: 0 0 14px; }
@@ -187,8 +187,47 @@ td.resumo { max-width: 380px; }
 .log li { padding: 7px 10px; border-radius: 6px; background: #f1f6fc; border-left: 3px solid var(--azul); }
 .log li.erro { background: #fdf0f0; border-left-color: #c0504d; }
 .log li.aviso { background: #fdf8ec; border-left-color: #e0a32e; }
-.modal-rodape { display: flex; justify-content: flex-end; margin-top: 16px; }
+.modal-rodape { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 16px; }
 .modal-rodape .btn.secundario { background: var(--azul-claro); color: var(--azul-escuro); }
+.modal-caixa.larga { width: min(720px, 100%); }
+
+/* ------------------------------------------------------------ formulario do Jira */
+
+.formulario { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.formulario label { display: grid; gap: 4px; font-size: 12px; color: var(--azul-escuro); font-weight: 600; }
+.formulario label.largo { grid-column: 1 / -1; }
+.formulario label em { font-weight: 400; color: var(--suave); font-style: normal; }
+.formulario input {
+  border: 1px solid var(--borda); border-radius: 6px;
+  padding: 7px 9px; font: inherit; font-size: 12.5px; color: var(--texto);
+  background: #fbfdff; width: 100%;
+}
+.formulario input:focus { outline: 2px solid var(--azul); outline-offset: -1px; background: #fff; }
+
+@media (max-width: 620px) { .formulario { grid-template-columns: 1fr; } }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; max-height: 180px; Overflow: auto; }
+.chips.oculto { display: none; }
+.chip {
+  border: 1px solid var(--borda); background: var(--azul-claro); color: var(--azul-escuro);
+  border-radius: 20px; padding: 3px 11px; font: inherit; font-size: 11.5px; cursor: pointer;
+  max-width: 260px; Overflow: hidden; text-Overflow: ellipsis; white-space: nowrap;
+}
+.chip:hover { background: #cddcf1; }
+.chip.ativo { background: var(--azul); color: #fff; border-color: var(--azul-escuro); font-weight: 600; }
+
+/* etiqueta de estado da conexao, no topo */
+.etiqueta {
+  display: inline-block; margin-left: 10px;
+  padding: 2px 9px; border-radius: 20px;
+  font-size: 11px; font-weight: 600; white-space: nowrap;
+  background: rgba(255,255,255,.16); color: #dce9f8;
+}
+.etiqueta.ok { background: rgba(112,173,71,.28); color: #dff5d3; }
+.etiqueta.alerta { background: rgba(225,87,89,.3); color: #ffdedd; }
+
+.ok-pilula { background: #eaf6e3; color: #4b7f2f; }
+.erro-pilula { background: #fdecec; color: #b03a3a; cursor: help; }
 
 /* ------------------------------------------------------------ impressao */
 

@@ -1,10 +1,10 @@
 # Dashboard Jira
 
-Dashboard web para análise das atividades do Jira a partir das planilhas exportadas.
-Você vai **adicionando arquivos Excel** e a base cresce sozinha, sem duplicar nada.
+Dashboard web para análise das atividades do Jira. Os dados vêm **direto da API do
+Jira** — nada de exportar planilha. A importação de Excel continua disponível como
+alternativa, para dados históricos que não estão mais no Jira.
 
 - Layout e indicadores reproduzem o **DashBoard_Jira** de referência.
-- Formato de dados baseado no **base_unificada_copia.xlsx** (16 colunas do export do Jira + `Origem`).
 - **Node puro, zero dependências** — nada de `npm install`.
 
 ## Como rodar
@@ -16,10 +16,55 @@ npm start
 
 Abre em <http://localhost:3000> (mude com `PORT=3210 npm start`).
 
-## Como adicionar planilhas
+## Conectar no Jira
 
-**Pelo navegador** (recomendado): botão **“+ Adicionar planilha”** → arraste um ou vários
+**Passo a passo completo, com onde colocar URL / e-mail / token:
+[`docs/CONFIGURACAO-JIRA.md`](docs/CONFIGURACAO-JIRA.md).**
+
+Versão curta:
+
+1. Gere um token em <https://id.atlassian.com/manage-profile/security/api-tokens>.
+2. Copie `.env.example` para `.env` e preencha:
+
+   ```dotenv
+   JIRA_URL=https://suaempresa.atlassian.net
+   JIRA_EMAIL=voce@empresa.com
+   JIRA_TOKEN=o_token_gerado
+   JIRA_PROJETOS=CRM,HUB,AR
+   JIRA_INTERVALO_MIN=30
+   ```
+
+   Ou preencha os mesmos campos no botão **Configurar Jira** do dashboard —
+   nesse caso ficam em `config/jira.json`. Os dois arquivos estão no `.gitignore`.
+3. `npm start` e clique em **⟳ Sincronizar Jira**.
+
+```bash
+npm run jira:testar      # testa a conexão e lista as chaves dos projetos visíveis
+npm run sync             # sincroniza só o que mudou desde a última vez
+npm run sync:completa    # relê tudo e remove da base issues apagadas no Jira
+```
+
+Com `JIRA_INTERVALO_MIN` maior que zero, o servidor sincroniza sozinho nesse intervalo.
+
+### Como funciona a sincronização
+
+A primeira passada traz o histórico inteiro. Depois, o dashboard guarda por projeto a
+data da issue mais recente que viu e pede ao Jira apenas `updated >= (essa data - 15 min)` —
+por isso as sincronizações seguintes levam segundos.
+
+Cada projeto vira uma linha na tabela **Origens sincronizadas do Jira**, no rodapé,
+com a data da última passada, o resultado e um botão para remover a origem inteira.
+
+Jira Server / Data Center também funciona: gere um *Personal Access Token*, deixe
+`JIRA_EMAIL` vazio e o cliente autentica com `Bearer` e cai no endpoint de busca antigo.
+
+## Como adicionar planilhas (alternativa)
+
+**Pelo navegador**: botão **“Planilha”** → arraste um ou vários
 `.xlsx` / `.csv`. O arquivo é lido, importado e guardado em `data/`.
+
+As duas fontes gravam na mesma tabela e são deduplicadas pela chave da issue: quando a
+mesma issue vem da API e de uma planilha, vence a versão com `Atualizado(a)` mais recente.
 
 **Pela linha de comando**: jogue os arquivos em `data/` e rode
 
@@ -92,22 +137,28 @@ as novas sem bagunçar os totais. Para ajustar os apelidos, edite `src/normaliza
 Por padrão **não** — só o status `Feito` conta, que é o critério do DashBoard_Jira de
 referência (288 criadas · 188 concluídas · 65,28%).
 
-A base tem dois workflows diferentes: `Feito` (188) e `Concluído` (33). Marcando
+A base tem dois Overflows diferentes: `Feito` (188) e `Concluído` (33). Marcando
 **“incluir Concluído”** no topo, os KPIs passam a considerar os dois (221 · 76,74%).
 
 ## Estrutura
 
 ```
-server.js            servidor HTTP + API (node:http)
-src/xlsx.js          leitor .xlsx: zip na mão + inflate + XML das abas
-src/normalizar.js    mapeamento de colunas, datas, status, espaços, pessoas
-src/ingestao.js      escolhe a aba, converte as linhas e grava
-src/banco.js         node:sqlite — tabelas `itens` e `importacoes`
-src/metricas.js      agregações do dashboard
-tools/importar.js    importação em lote pela pasta data/
-public/              index.html, styles.css, app.js (gráficos SVG)
-data/                as planilhas que você foi adicionando
-db/jira.db           banco gerado
+server.js              servidor HTTP + API (node:http)
+src/config.js          lê .env e config/jira.json (credenciais do Jira)
+src/jira.js            cliente REST do Jira: auth, paginação, erros
+src/sincronizacao.js   issue da API -> registro do banco; incremental e completa
+src/xlsx.js            leitor .xlsx: zip na mão + inflate + XML das abas
+src/normalizar.js      mapeamento de colunas, datas, status, espaços, pessoas
+src/ingestao.js        escolhe a aba, converte as linhas e grava
+src/banco.js           node:sqlite — tabelas itens, importacoes e sincronizacoes
+src/metricas.js        agregações do dashboard
+tools/sincronizar.js   sincronização pela linha de comando
+tools/importar.js      importação em lote pela pasta data/
+public/                index.html, styles.css, app.js (gráficos SVG)
+data/                  as planilhas que você foi adicionando
+db/jira.db             banco gerado
+.env                   suas credenciais (fora do Git)
+docs/                  guia de configuração do Jira
 ```
 
 ### API
@@ -116,13 +167,26 @@ db/jira.db           banco gerado
 |---|---|
 | `GET /api/dashboard?espacos=A\|B&responsaveis=X&de=&ate=&amplo=1` | payload completo |
 | `GET /api/itens?...&limite=500` | tabela detalhada |
-| `GET /api/importacoes` | histórico |
+| `GET /api/jira/config` | configuração atual (token mascarado) + estado das sincronizações |
+| `POST /api/jira/config` | salva a configuração em `config/jira.json` |
+| `POST /api/jira/testar` | testa credenciais (aceita URL/e-mail/token no corpo) |
+| `GET /api/jira/projetos` | projetos visíveis para a conta |
+| `POST /api/jira/sincronizar[?completa=1]` | dispara a sincronização |
+| `DELETE /api/jira/sincronizacoes/:origem` | remove uma origem e seus itens |
+| `GET /api/importacoes` | histórico de planilhas |
 | `POST /api/upload?nome=arq.xlsx` | corpo = binário do arquivo |
 | `DELETE /api/importacoes/:id` | remove um lote |
 | `POST /api/limpar` | zera a base |
 
+## Segurança
+
+O servidor guarda o token do Jira, então por padrão escuta **só em `127.0.0.1`**.
+Para abrir na rede local: `HOST=0.0.0.0 npm start` — ciente de que qualquer pessoa
+da rede poderá disparar sincronizações. O token nunca é enviado ao navegador.
+
 ## Limitações
 
-O export por planilha do Jira não traz **story points**, **worklogs** nem marca de
-início da atividade — então não há métrica de horas apontadas nem cycle time real.
-O "tempo até concluir" usa `Criado` → `Atualizado(a)`, que é uma aproximação do lead time.
+A sincronização traz os mesmos campos do export de planilha (tipo, responsável,
+status, datas, prioridade, projeto). **Story points**, **worklogs** e histórico de
+transições não são lidos — então não há horas apontadas nem cycle time real. O
+"tempo até concluir" usa `Criado` → `Atualizado`, que é uma aproximação do lead time.

@@ -1,7 +1,7 @@
 {
   "name": "dashboard-jira",
   "version": "1.0.0",
-  "description": "Dashboard de analise de atividades do Jira a partir de planilhas exportadas (base unificada)",
+  "description": "Dashboard de analise de atividades do Jira, alimentado pela API do Jira (com importacao de planilhas como alternativa)",
   "type": "module",
   "private": true,
   "engines": {
@@ -9,6 +9,9 @@
   },
   "scripts": {
     "start": "node server.js",
+    "sync": "node tools/sincronizar.js",
+    "sync:completa": "node tools/sincronizar.js --completa",
+    "jira:testar": "node tools/sincronizar.js --testar",
     "import": "node tools/importar.js",
     "reset": "node tools/importar.js --reset"
   }

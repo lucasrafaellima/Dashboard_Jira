@@ -130,8 +130,18 @@ const CATEGORIA_STATUS = new Map(
   }),
 );
 
-export function categoriaStatus(status) {
-  return CATEGORIA_STATUS.get(chaveComparacao(status)) ?? 'Outros';
+/** Categorias da API do Jira (campo status.statusCategory.key). */
+const CATEGORIA_API = { new: 'A fazer', indeterminate: 'Em andamento', done: 'Concluído' };
+
+/**
+ * @param {string} status nome do status
+ * @param {string} [categoriaApi] chave da categoria vinda da API ("new"/"indeterminate"/"done"),
+ *                 usada quando o nome do status nao esta na tabela acima.
+ */
+export function categoriaStatus(status, categoriaApi) {
+  return CATEGORIA_STATUS.get(chaveComparacao(status))
+    ?? CATEGORIA_API[String(categoriaApi ?? '').toLowerCase()]
+    ?? 'Outros';
 }
 
 /**
@@ -156,13 +166,19 @@ function apelidar(canonico, ...apelidos) {
   APELIDO_ESPACO.set(chaveComparacao(canonico), canonico);
   for (const a of apelidos) APELIDO_ESPACO.set(chaveComparacao(a), canonico);
 }
-apelidar('Overflow(Kestra)', 'Overflow', 'Workflow(Kestra)', 'Davi', 'status-davi-25-07.csv', 'WIK');
+apelidar('Overflow(Kestra)', 'Overflow', 'Overflow(Kestra)', 'Davi', 'status-davi-25-07.csv', 'WIK');
 apelidar('CRM Loja', 'CRM Loja/Campo', 'status-crm-loja-campo-25-07.csv', 'CRM');
 apelidar('HUB', 'Hub', 'status-hub-25-07.csv');
 apelidar('HUB Configurador', 'Hub Configurador', 'status-hub-configurador-25-07.csv', 'HC');
 apelidar('Coagro Work', 'status-coagro-work-25-07.csv', 'GCW');
 apelidar('NWE', 'status-nwe-25-07.csv');
 apelidar('APP Receituário', 'APP Receituario', 'App Receituário', 'AR', 'status-app-receituario-25-07.csv');
+
+/** Rotulo canonico se o texto for um apelido conhecido de espaco; senao null. */
+export function apelidoEspaco(valor) {
+  const s = String(valor ?? '').trim();
+  return s ? APELIDO_ESPACO.get(chaveComparacao(s)) ?? null : null;
+}
 
 function titulo(s) {
   return s

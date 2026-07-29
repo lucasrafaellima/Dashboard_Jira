@@ -1,5 +1,7 @@
 node_modules/
 db/
+.env
+config/jira.json
 data/*.xlsx
 data/*.csv
 ~$*

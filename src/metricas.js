@@ -1,5 +1,5 @@
 // Agregacoes que alimentam o dashboard.
-import { listarItens, listarImportacoes } from './banco.js';
+import { listarItens, listarImportacoes, listarSincronizacoes } from './banco.js';
 import { ehConcluida, SEM_RESPONSAVEL } from './normalizar.js';
 
 function contarPor(itens, chave) {
@@ -123,6 +123,7 @@ export function montarDashboard(filtros = {}) {
     periodo: { inicio: datas[0] ?? null, fim: datas[datas.length - 1] ?? null },
     baseTotal: todos.length,
     importacoes,
+    sincronizacoes: listarSincronizacoes(),
     geradoEm: new Date().toISOString(),
   };
 }

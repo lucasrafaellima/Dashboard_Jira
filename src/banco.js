@@ -60,6 +60,21 @@ function criarEsquema(d) {
       ignorados    INTEGER DEFAULT 0,
       importado_em TEXT
     );
+
+    -- Uma linha por origem sincronizada da API do Jira (chave do projeto, ou
+    -- "(consulta)" quando o usuario define um JQL livre). Guarda a marca d'agua
+    -- do maior "updated" ja visto, usada na sincronizacao incremental.
+    CREATE TABLE IF NOT EXISTS sincronizacoes (
+      origem       TEXT PRIMARY KEY,
+      jql          TEXT,
+      itens        INTEGER DEFAULT 0,
+      novos        INTEGER DEFAULT 0,
+      atualizados  INTEGER DEFAULT 0,
+      removidos    INTEGER DEFAULT 0,
+      marca_agua   TEXT,
+      erro         TEXT,
+      sincronizado_em TEXT
+    );
   `);
 }
 
@@ -144,7 +159,7 @@ export function contarItens() {
 
 export function limparTudo() {
   const d = conectar();
-  d.exec('DELETE FROM itens; DELETE FROM importacoes;');
+  d.exec('DELETE FROM itens; DELETE FROM importacoes; DELETE FROM sincronizacoes;');
 }
 
 /** Remove os itens vindos de um arquivo especifico e o registro da importacao. */
@@ -155,4 +170,78 @@ export function removerImportacao(id) {
   const r = d.prepare('DELETE FROM itens WHERE arquivo_origem = ?').run(imp.arquivo);
   d.prepare('DELETE FROM importacoes WHERE id = ?').run(id);
   return { arquivo: imp.arquivo, itensRemovidos: Number(r.changes ?? 0) };
+}
+
+// ------------------------------------------------------------ sincronizacao com a API
+
+/** Rotulo gravado em itens.arquivo_origem para o que veio da API. */
+export const origemJira = (origem) => `jira:${origem}`;
+
+export function lerSincronizacao(origem) {
+  return conectar().prepare('SELECT * FROM sincronizacoes WHERE origem = ?').get(origem) ?? null;
+}
+
+export function listarSincronizacoes() {
+  return conectar().prepare('SELECT * FROM sincronizacoes ORDER BY origem').all();
+}
+
+/** Grava (ou atualiza) o resultado da ultima sincronizacao de uma origem. */
+export function registrarSincronizacao({ origem, jql, itens, novos, atualizados, removidos, marcaAgua, erro }) {
+  conectar().prepare(`
+    INSERT INTO sincronizacoes (origem, jql, itens, novos, atualizados, removidos, marca_agua, erro, sincronizado_em)
+    VALUES ($origem, $jql, $itens, $novos, $atualizados, $removidos, $marca_agua, $erro, $sincronizado_em)
+    ON CONFLICT(origem) DO UPDATE SET
+      jql = excluded.jql,
+      itens = excluded.itens,
+      novos = excluded.novos,
+      atualizados = excluded.atualizados,
+      removidos = excluded.removidos,
+      -- so avanca a marca d'agua; um erro nao pode fazer ela retroceder
+      marca_agua = COALESCE(MAX(COALESCE(excluded.marca_agua, ''), COALESCE(sincronizacoes.marca_agua, '')), ''),
+      erro = excluded.erro,
+      sincronizado_em = excluded.sincronizado_em
+  `).run({
+    origem,
+    jql: jql ?? null,
+    itens: itens ?? 0,
+    novos: novos ?? 0,
+    atualizados: atualizados ?? 0,
+    removidos: removidos ?? 0,
+    marca_agua: marcaAgua ?? null,
+    erro: erro ?? null,
+    sincronizado_em: new Date().toISOString(),
+  });
+}
+
+/** Apaga os itens de uma origem sincronizada e o registro dela. */
+export function removerSincronizacao(origem) {
+  const d = conectar();
+  const reg = lerSincronizacao(origem);
+  if (!reg) return null;
+  const r = d.prepare('DELETE FROM itens WHERE arquivo_origem = ?').run(origemJira(origem));
+  d.prepare('DELETE FROM sincronizacoes WHERE origem = ?').run(origem);
+  return { origem, itensRemovidos: Number(r.changes ?? 0) };
+}
+
+/**
+ * Apaga os itens de uma origem que nao vieram na lista de chaves — usado na
+ * sincronizacao completa, para refletir issues excluidas ou movidas no Jira.
+ */
+export function removerAusentes(origem, chaves) {
+  const d = conectar();
+  const atuais = d.prepare('SELECT chave FROM itens WHERE arquivo_origem = ?').all(origemJira(origem));
+  const vivos = new Set(chaves);
+  const sumidos = atuais.map((r) => r.chave).filter((c) => !vivos.has(c));
+  if (!sumidos.length) return 0;
+
+  const apagar = d.prepare('DELETE FROM itens WHERE chave = ?');
+  d.exec('BEGIN');
+  try {
+    for (const c of sumidos) apagar.run(c);
+    d.exec('COMMIT');
+  } catch (e) {
+    d.exec('ROLLBACK');
+    throw e;
+  }
+  return sumidos.length;
 }

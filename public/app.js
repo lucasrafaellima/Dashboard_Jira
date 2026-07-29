@@ -308,6 +308,26 @@ function renderizar(d, detalhe) {
     )
     .join('') || '<tr><td colspan="9">Nenhuma atividade para os filtros selecionados.</td></tr>';
 
+  const sincronizacoes = d.sincronizacoes ?? [];
+  const itensSync = sincronizacoes.reduce((s, x) => s + (x.itens || 0), 0);
+  $('#resumo-sync').textContent = sincronizacoes.length
+    ? `— ${sincronizacoes.length} origem(ns), ${num(itensSync)} itens na última passada`
+    : '— nenhuma sincronização ainda';
+
+  $('#tabela-sincronizacoes tbody').innerHTML = sincronizacoes
+    .map(
+      (s) => `<tr>
+        <td><b>${esc(s.origem)}</b></td>
+        <td>${num(s.itens)}</td><td>${num(s.novos)}</td><td>${num(s.atualizados)}</td>
+        <td>${dataCurta(s.sincronizado_em)}</td>
+        <td>${s.erro
+          ? `<span class="pilula erro-pilula" title="${esc(s.erro)}">erro</span>`
+          : '<span class="pilula ok-pilula">ok</span>'}</td>
+        <td><button class="btn-mini" data-remover-sync="${esc(s.origem)}">remover</button></td>
+      </tr>`,
+    )
+    .join('') || '<tr><td colspan="7">Nenhuma origem sincronizada. Clique em “Configurar Jira”.</td></tr>';
+
   $('#tabela-importacoes tbody').innerHTML = d.importacoes
     .map(
       (imp) => `<tr>
@@ -353,6 +373,178 @@ async function enviarArquivos(lista) {
   await carregar();
 }
 
+// ------------------------------------------------------------ Jira (API)
+
+/** Escreve uma linha no log do modal do Jira. */
+function logJira(texto, classe = '') {
+  const li = document.createElement('li');
+  li.className = classe;
+  li.textContent = texto;
+  $('#log-jira').prepend(li);
+  return li;
+}
+
+function pintarStatusJira(cfg, sincronizacoes = []) {
+  const el = $('#status-jira');
+  if (!cfg.configurado) {
+    el.className = 'etiqueta alerta';
+    el.textContent = 'Jira não configurado';
+    el.title = 'Clique em "Configurar Jira" para conectar a API.';
+    return;
+  }
+  const comErro = sincronizacoes.filter((s) => s.erro);
+  const ultima = sincronizacoes
+    .map((s) => s.sincronizado_em)
+    .filter(Boolean)
+    .sort()
+    .pop();
+  el.className = comErro.length ? 'etiqueta alerta' : 'etiqueta ok';
+  const host = cfg.url.replace(/^https?:\/\//, '');
+  el.textContent = comErro.length
+    ? `${host} — ${comErro.length} origem(ns) com erro`
+    : `${host} — última sincronização ${ultima ? dataCurta(ultima) : 'nunca'}`;
+  el.title = comErro.map((s) => `${s.origem}: ${s.erro}`).join('\n') || `Conectado a ${cfg.url}`;
+}
+
+async function carregarConfigJira({ preencher = false } = {}) {
+  const r = await fetch('/api/jira/config').then((x) => x.json());
+  const cfg = r.config;
+  pintarStatusJira(cfg, r.sincronizacoes);
+  if (preencher) {
+    $('#jira-url').value = cfg.url || '';
+    $('#jira-email').value = cfg.email || '';
+    $('#jira-token').value = '';
+    $('#jira-token').placeholder = cfg.temToken
+      ? `token salvo (${cfg.tokenMascarado}) — deixe em branco para manter`
+      : 'cole o token aqui';
+    $('#jira-projetos').value = (cfg.projetos || []).join(', ');
+    $('#jira-jql').value = cfg.jql || '';
+    $('#jira-intervalo').value = cfg.intervaloMinutos ?? 0;
+
+    const travados = Object.entries(cfg.travadoPorEnv || {}).filter(([, v]) => v).map(([k]) => k);
+    if (travados.length) {
+      logJira(
+        `Definidos no .env e por isso não editáveis aqui: ${travados.join(', ')}.`,
+        'aviso',
+      );
+    }
+  }
+  return cfg;
+}
+
+function corpoConfigJira() {
+  return {
+    url: $('#jira-url').value.trim(),
+    email: $('#jira-email').value.trim(),
+    token: $('#jira-token').value.trim() || undefined,
+    projetos: $('#jira-projetos').value,
+    jql: $('#jira-jql').value.trim(),
+    intervaloMinutos: Number($('#jira-intervalo').value) || 0,
+  };
+}
+
+async function testarJira() {
+  const li = logJira('Testando conexão…');
+  try {
+    const r = await fetch('/api/jira/testar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        url: $('#jira-url').value.trim(),
+        email: $('#jira-email').value.trim(),
+        token: $('#jira-token').value.trim() || undefined,
+      }),
+    }).then((x) => x.json());
+    if (!r.ok) throw new Error(r.erro || 'não foi possível conectar');
+    li.textContent = `Conectado como ${r.conta} (API v${r.api}).`;
+    return true;
+  } catch (e) {
+    li.className = 'erro';
+    li.textContent = e.message;
+    return false;
+  }
+}
+
+async function listarProjetosJira() {
+  const li = logJira('Buscando projetos visíveis…');
+  try {
+    const r = await fetch('/api/jira/projetos').then((x) => x.json());
+    if (r.erro) throw new Error(r.erro);
+    const caixa = $('#lista-projetos');
+    caixa.classList.remove('oculto');
+    const escolhidos = new Set(
+      $('#jira-projetos').value.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean),
+    );
+    caixa.innerHTML = r.projetos
+      .map((p) => `<button type="button" class="chip ${escolhidos.has(p.chave) ? 'ativo' : ''}"
+        data-chave="${esc(p.chave)}" title="${esc(p.nome)}">${esc(p.chave)} · ${esc(p.nome)}</button>`)
+      .join('') || '<span class="vazio">Nenhum projeto visível para essa conta.</span>';
+    li.textContent = `${r.projetos.length} projeto(s) visíveis. Clique para incluir ou tirar da sincronização.`;
+  } catch (e) {
+    li.className = 'erro';
+    li.textContent = e.message;
+  }
+}
+
+/** Alterna uma chave de projeto no campo de projetos. */
+function alternarProjeto(chave, botao) {
+  const atuais = $('#jira-projetos').value.split(/[,;\s]+/).map((s) => s.trim()).filter(Boolean);
+  const i = atuais.indexOf(chave);
+  if (i >= 0) atuais.splice(i, 1);
+  else atuais.push(chave);
+  $('#jira-projetos').value = atuais.join(', ');
+  botao.classList.toggle('ativo', i < 0);
+}
+
+async function sincronizarAgora({ completa = false } = {}) {
+  const botao = $('#btn-sincronizar');
+  const rotuloAnterior = botao.textContent;
+  botao.disabled = true;
+  botao.textContent = completa ? 'Sincronizando tudo…' : 'Sincronizando…';
+  const li = logJira(completa ? 'Sincronização completa em andamento…' : 'Sincronizando…');
+
+  try {
+    const r = await fetch(`/api/jira/sincronizar${completa ? '?completa=1' : ''}`, { method: 'POST' })
+      .then((x) => x.json());
+    if (r.erro) throw new Error(r.erro);
+
+    const resumo = r.origens
+      .map((o) => (o.ok
+        ? `${o.origem}: ${o.itens} lidas (${o.novos} novas, ${o.atualizados} atualizadas${o.removidos ? `, ${o.removidos} removidas` : ''})`
+        : `${o.origem}: ERRO — ${o.erro}`))
+      .join(' · ');
+    li.className = r.falhas ? 'aviso' : '';
+    li.textContent = `${resumo} — em ${(r.duracaoMs / 1000).toFixed(1)}s`;
+  } catch (e) {
+    li.className = 'erro';
+    li.textContent = e.message;
+  } finally {
+    botao.disabled = false;
+    botao.textContent = rotuloAnterior;
+    await carregar();
+    await carregarConfigJira();
+  }
+}
+
+async function salvarJira() {
+  const li = logJira('Salvando configuração…');
+  try {
+    const r = await fetch('/api/jira/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(corpoConfigJira()),
+    }).then((x) => x.json());
+    if (r.erro) throw new Error(r.erro);
+    li.textContent = `Configuração salva em ${r.config.arquivoConfig}.`;
+    $('#jira-token').value = '';
+    await carregarConfigJira({ preencher: false });
+    await sincronizarAgora();
+  } catch (e) {
+    li.className = 'erro';
+    li.textContent = e.message;
+  }
+}
+
 // ------------------------------------------------------------ eventos
 
 function iniciar() {
@@ -395,15 +587,49 @@ function iniciar() {
     if (arquivos.length) enviarArquivos(arquivos);
   });
 
+  // --- Jira
+  const modalJira = $('#modal-jira');
+  $('#btn-config-jira').addEventListener('click', async () => {
+    modalJira.classList.remove('oculto');
+    await carregarConfigJira({ preencher: true });
+  });
+  $('#btn-fechar-jira').addEventListener('click', () => modalJira.classList.add('oculto'));
+  modalJira.addEventListener('click', (e) => { if (e.target === modalJira) modalJira.classList.add('oculto'); });
+
+  $('#btn-sincronizar').addEventListener('click', () => sincronizarAgora());
+  $('#btn-sync-completa').addEventListener('click', () => {
+    if (confirm('A sincronização completa relê todas as issues e remove da base as que não existem mais no Jira. Continuar?')) {
+      sincronizarAgora({ completa: true });
+    }
+  });
+  $('#btn-testar').addEventListener('click', testarJira);
+  $('#btn-listar-projetos').addEventListener('click', listarProjetosJira);
+  $('#btn-salvar-jira').addEventListener('click', salvarJira);
+  $('#lista-projetos').addEventListener('click', (e) => {
+    const chip = e.target.closest('.chip');
+    if (chip) alternarProjeto(chip.dataset.chave, chip);
+  });
+
   document.addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-remover]');
-    if (!btn) return;
-    if (!confirm('Remover essa importação e todas as atividades que vieram dela?')) return;
-    await fetch(`/api/importacoes/${btn.dataset.remover}`, { method: 'DELETE' });
-    await carregar();
+    if (btn) {
+      if (!confirm('Remover essa importação e todas as atividades que vieram dela?')) return;
+      await fetch(`/api/importacoes/${btn.dataset.remover}`, { method: 'DELETE' });
+      await carregar();
+      return;
+    }
+    const btnSync = e.target.closest('[data-remover-sync]');
+    if (btnSync) {
+      const origem = btnSync.dataset.removerSync;
+      if (!confirm(`Remover a origem "${origem}" e todas as atividades que vieram dela?`)) return;
+      await fetch(`/api/jira/sincronizacoes/${encodeURIComponent(origem)}`, { method: 'DELETE' });
+      await carregar();
+      await carregarConfigJira();
+    }
   });
 
   carregar();
+  carregarConfigJira();
 }
 
 iniciar();
