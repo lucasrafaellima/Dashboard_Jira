@@ -166,7 +166,9 @@ function apelidar(canonico, ...apelidos) {
   APELIDO_ESPACO.set(chaveComparacao(canonico), canonico);
   for (const a of apelidos) APELIDO_ESPACO.set(chaveComparacao(a), canonico);
 }
-apelidar('Overflow(Kestra)', 'Overflow', 'Overflow(Kestra)', 'Davi', 'status-davi-25-07.csv', 'WIK');
+// "Overflow" continua na lista de apelidos porque planilhas e bases antigas
+// gravaram o espaco com esse nome errado — todas caem no rotulo certo.
+apelidar('Workflow(Kestra)', 'Workflow', 'Overflow', 'Overflow(Kestra)', 'Davi', 'status-davi-25-07.csv', 'WIK');
 apelidar('CRM Loja', 'CRM Loja/Campo', 'status-crm-loja-campo-25-07.csv', 'CRM');
 apelidar('HUB', 'Hub', 'status-hub-25-07.csv');
 apelidar('HUB Configurador', 'Hub Configurador', 'status-hub-configurador-25-07.csv', 'HC');

@@ -114,7 +114,7 @@ Só `Chave da item` e `Status` são obrigatórias. O leitor:
 |---|---|
 | `Subtask` / `Subtarefa` | `Subtarefa` |
 | célula vazia / `Sem responsável` | `(vazio)` |
-| `Overflow`, `Davi`, `status-davi-25-07.csv` | `Overflow(Kestra)` |
+| `Workflow`, `Overflow`, `Davi`, `status-davi-25-07.csv` | `Workflow(Kestra)` |
 | `CRM Loja/Campo` | `CRM Loja` |
 | `Hub`, `Hub Configurador` | `HUB`, `HUB Configurador` |
 
@@ -137,7 +137,7 @@ as novas sem bagunçar os totais. Para ajustar os apelidos, edite `src/normaliza
 Por padrão **não** — só o status `Feito` conta, que é o critério do DashBoard_Jira de
 referência (288 criadas · 188 concluídas · 65,28%).
 
-A base tem dois Overflows diferentes: `Feito` (188) e `Concluído` (33). Marcando
+A base tem dois fluxos de trabalho diferentes: `Feito` (188) e `Concluído` (33). Marcando
 **“incluir Concluído”** no topo, os KPIs passam a considerar os dois (221 · 76,74%).
 
 ## Estrutura

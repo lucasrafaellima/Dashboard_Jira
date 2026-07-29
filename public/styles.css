@@ -89,7 +89,7 @@ input[type="date"] {
 
 /* ------------------------------------------------------------ slicers */
 
-.slicer { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; max-height: 260px; Overflow: auto; }
+.slicer { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; max-height: 260px; overflow: auto; }
 .slicer li {
   border: 1px solid var(--borda);
   border-radius: 4px;
@@ -99,7 +99,7 @@ input[type="date"] {
   background: var(--azul-claro);
   color: var(--azul-escuro);
   display: flex; justify-content: space-between; gap: 8px;
-  white-space: nowrap; Overflow: hidden; text-Overflow: ellipsis;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   user-select: none;
 }
 .slicer li:hover { background: #cddcf1; }
@@ -123,7 +123,7 @@ input[type="date"] {
 /* ------------------------------------------------------------ graficos */
 
 .area-grafico { width: 100%; }
-.area-grafico svg { display: block; width: 100%; height: auto; Overflow: visible; }
+.area-grafico svg { display: block; width: 100%; height: auto; overflow: visible; }
 .area-grafico .vazio { color: var(--suave); font-size: 12.5px; padding: 24px 0; text-align: center; }
 
 .eixo { fill: var(--suave); font-size: 10px; }
@@ -141,7 +141,7 @@ input[type="date"] {
 .lista-panorama li:last-child { border-bottom: 0; }
 .lista-panorama b { font-variant-numeric: tabular-nums; color: var(--azul-escuro); }
 
-.rolagem { Overflow: auto; max-height: 460px; border: 1px solid #e3eaf3; border-radius: 6px; }
+.rolagem { overflow: auto; max-height: 460px; border: 1px solid #e3eaf3; border-radius: 6px; }
 .rolagem.baixa { max-height: 240px; }
 table { border-collapse: collapse; width: 100%; font-size: 12.2px; }
 thead th {
@@ -173,7 +173,7 @@ td.resumo { max-width: 380px; }
 .modal.oculto { display: none; }
 .modal-caixa {
   background: #fff; border-radius: 10px; padding: 20px;
-  width: min(560px, 100%); max-height: 88vh; Overflow: auto;
+  width: min(560px, 100%); max-height: 88vh; overflow: auto;
 }
 .modal-caixa h2 { margin: 0 0 8px; color: var(--azul-escuro); font-size: 16px; }
 .ajuda { color: var(--suave); font-size: 12.5px; margin: 0 0 14px; }
@@ -206,12 +206,12 @@ td.resumo { max-width: 380px; }
 
 @media (max-width: 620px) { .formulario { grid-template-columns: 1fr; } }
 
-.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; max-height: 180px; Overflow: auto; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 14px; max-height: 180px; overflow: auto; }
 .chips.oculto { display: none; }
 .chip {
   border: 1px solid var(--borda); background: var(--azul-claro); color: var(--azul-escuro);
   border-radius: 20px; padding: 3px 11px; font: inherit; font-size: 11.5px; cursor: pointer;
-  max-width: 260px; Overflow: hidden; text-Overflow: ellipsis; white-space: nowrap;
+  max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .chip:hover { background: #cddcf1; }
 .chip.ativo { background: var(--azul); color: #fff; border-color: var(--azul-escuro); font-weight: 600; }

@@ -118,7 +118,7 @@ Projetos visíveis (6):
   GCW          Coagro Work
   HC           HUB Configurador
   HUB          HUB
-  WIK          Overflow(Kestra)
+  WIK          Workflow(Kestra)
 ```
 
 Coloque as chaves desejadas em `JIRA_PROJETOS` (ou no campo **Projetos** da tela),
