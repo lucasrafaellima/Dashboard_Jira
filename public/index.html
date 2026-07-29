@@ -15,8 +15,8 @@
     <span id="status-jira" class="etiqueta">verificando conexão…</span>
   </div>
   <div class="acoes">
-    <label class="alternador" title="Contar também o status &quot;Concluído&quot; como atividade concluída">
-      <input type="checkbox" id="amplo"> incluir “Concluído”
+    <label class="alternador" title="Por padrão, cancelados não entram na taxa de conclusão — foram encerrados, não entregues">
+      <input type="checkbox" id="cancelados"> contar cancelados como concluídas
     </label>
     <input type="date" id="de" title="Criadas a partir de">
     <input type="date" id="ate" title="Criadas até">
@@ -106,6 +106,18 @@
             <th>Chave</th><th>Tipo</th><th>Resumo</th><th>Responsável</th>
             <th>Status</th><th>Prioridade</th><th>Espaço</th><th>Criado</th><th>Atualizado</th>
           </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="cartao">
+    <h2>Padronização de status <span class="sub">— nomes vindos do Jira que foram unificados; o original de cada item fica guardado</span></h2>
+    <div class="rolagem baixa">
+      <table id="tabela-padronizacao">
+        <thead>
+          <tr><th>Status padronizado</th><th>Categoria</th><th>Total</th><th>Nomes originais no Jira</th></tr>
         </thead>
         <tbody></tbody>
       </table>

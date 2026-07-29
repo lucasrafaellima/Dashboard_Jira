@@ -1,6 +1,6 @@
 // Agregacoes que alimentam o dashboard.
 import { listarItens, listarImportacoes, listarSincronizacoes } from './banco.js';
-import { ehConcluida, SEM_RESPONSAVEL } from './normalizar.js';
+import { ehConcluida, SEM_RESPONSAVEL, ORDEM_PRIORIDADE, CATEGORIAS } from './normalizar.js';
 
 function contarPor(itens, chave) {
   const mapa = new Map();
@@ -15,8 +15,48 @@ function mesDe(iso) {
   return iso ? iso.slice(0, 7) : null;
 }
 
+/** Conta seguindo uma ordem fixa de rotulos; o que sobra vai para o fim, por total. */
+function contarNaOrdem(itens, chave, ordem) {
+  const contagem = contarPor(itens, chave);
+  const posicao = new Map(ordem.map((r, i) => [r, i]));
+  return contagem.sort((a, b) => {
+    const pa = posicao.get(a.rotulo) ?? Infinity;
+    const pb = posicao.get(b.rotulo) ?? Infinity;
+    return pa - pb || b.total - a.total;
+  });
+}
+
+/**
+ * Auditoria da padronizacao: quais nomes originais do Jira foram unificados em
+ * cada rotulo. E o que permite conferir que "FECHADO" virou "Concluído".
+ */
+function padronizacaoAplicada(itens) {
+  const grupos = new Map();
+  for (const it of itens) {
+    const alvo = it.status || 'Sem status';
+    if (!grupos.has(alvo)) {
+      grupos.set(alvo, { status: alvo, categoria: it.status_categoria, total: 0, origens: new Map() });
+    }
+    const g = grupos.get(alvo);
+    g.total++;
+    const bruto = it.status_origem || alvo;
+    g.origens.set(bruto, (g.origens.get(bruto) || 0) + 1);
+  }
+  return [...grupos.values()]
+    .map((g) => ({
+      status: g.status,
+      categoria: g.categoria,
+      total: g.total,
+      origens: [...g.origens]
+        .map(([rotulo, total]) => ({ rotulo, total }))
+        .sort((a, b) => b.total - a.total),
+      unificou: g.origens.size > 1,
+    }))
+    .sort((a, b) => b.total - a.total);
+}
+
 /** Serie mensal de itens criados x concluidos (concluido pela data de atualizacao). */
-function serieMensal(itens, amplo) {
+function serieMensal(itens, incluirCancelados) {
   const meses = new Map();
   const garantir = (m) => {
     if (!meses.has(m)) meses.set(m, { mes: m, criadas: 0, concluidas: 0 });
@@ -25,7 +65,7 @@ function serieMensal(itens, amplo) {
   for (const it of itens) {
     const mc = mesDe(it.criado);
     if (mc) garantir(mc).criadas++;
-    if (ehConcluida(it.status, amplo)) {
+    if (ehConcluida(it.status, incluirCancelados)) {
       const mf = mesDe(it.atualizado) || mc;
       if (mf) garantir(mf).concluidas++;
     }
@@ -34,10 +74,10 @@ function serieMensal(itens, amplo) {
 }
 
 /** Tempo em dias entre criacao e conclusao (mediana + media). */
-function tempoDeConclusao(itens, amplo) {
+function tempoDeConclusao(itens, incluirCancelados) {
   const dias = [];
   for (const it of itens) {
-    if (!ehConcluida(it.status, amplo) || !it.criado || !it.atualizado) continue;
+    if (!ehConcluida(it.status, incluirCancelados) || !it.criado || !it.atualizado) continue;
     const d = (Date.parse(it.atualizado) - Date.parse(it.criado)) / 86400000;
     if (Number.isFinite(d) && d >= 0) dias.push(d);
   }
@@ -75,11 +115,11 @@ function ordenarResponsaveis(lista) {
 
 /** Monta o payload completo do dashboard. */
 export function montarDashboard(filtros = {}) {
-  const amplo = !!filtros.amplo;
+  const incluirCancelados = !!filtros.incluirCancelados;
   const todos = listarItens();
   const itens = aplicarFiltros(todos, filtros);
 
-  const concluidas = itens.filter((it) => ehConcluida(it.status, amplo));
+  const concluidas = itens.filter((it) => ehConcluida(it.status, incluirCancelados));
   const total = itens.length;
 
   const datas = itens.map((it) => it.criado).filter(Boolean).sort();
@@ -93,7 +133,7 @@ export function montarDashboard(filtros = {}) {
       status: filtros.status ?? [],
       de: filtros.de ?? null,
       ate: filtros.ate ?? null,
-      amplo,
+      incluirCancelados,
     },
     opcoes: {
       espacos: contarPor(todos, 'espaco').map((x) => x.rotulo),
@@ -107,19 +147,24 @@ export function montarDashboard(filtros = {}) {
       taxaConclusao: total ? +((concluidas.length / total) * 100).toFixed(2) : 0,
       emAndamento: itens.filter((it) => it.status_categoria === 'Em andamento').length,
       aFazer: itens.filter((it) => it.status_categoria === 'A fazer').length,
+      canceladas: itens.filter((it) => it.status_categoria === 'Cancelado').length,
       semResponsavel: itens.filter((it) => it.responsavel === SEM_RESPONSAVEL).length,
       atrasadas: itens.filter(
-        (it) => it.data_limite && !ehConcluida(it.status, amplo) && it.data_limite.slice(0, 10) < new Date().toISOString().slice(0, 10),
+        (it) => it.data_limite && !ehConcluida(it.status, incluirCancelados)
+          && it.status_categoria !== 'Cancelado'
+          && it.data_limite.slice(0, 10) < new Date().toISOString().slice(0, 10),
       ).length,
     },
     porStatus: contarPor(itens, 'status'),
+    porCategoria: contarNaOrdem(itens, 'status_categoria', CATEGORIAS),
     porEspaco: contarPor(itens, 'espaco'),
     porTipo: contarPor(itens, 'tipo_item'),
-    porPrioridade: contarPor(itens, 'prioridade'),
+    porPrioridade: contarNaOrdem(itens, 'prioridade', ORDEM_PRIORIDADE),
     concluidasPorResponsavel: ordenarResponsaveis(contarPor(concluidas, 'responsavel')),
     criadasPorResponsavel: ordenarResponsaveis(contarPor(itens, 'responsavel')),
-    serieMensal: serieMensal(itens, amplo),
-    tempoDeConclusao: tempoDeConclusao(itens, amplo),
+    serieMensal: serieMensal(itens, incluirCancelados),
+    tempoDeConclusao: tempoDeConclusao(itens, incluirCancelados),
+    padronizacao: padronizacaoAplicada(itens),
     periodo: { inicio: datas[0] ?? null, fim: datas[datas.length - 1] ?? null },
     baseTotal: todos.length,
     importacoes,

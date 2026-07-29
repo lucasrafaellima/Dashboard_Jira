@@ -6,7 +6,7 @@
 // ja visto: a sincronizacao seguinte pede so o que mudou desde entao.
 import { lerConfig } from './config.js';
 import { buscarIssues, escaparJql, listarProjetos, verificarConexao } from './jira.js';
-import { normalizarLinha, categoriaStatus, apelidoEspaco } from './normalizar.js';
+import { normalizarLinha, espacoDoProjeto } from './normalizar.js';
 import {
   gravarItens, lerSincronizacao, listarSincronizacoes,
   registrarSincronizacao, removerAusentes, origemJira,
@@ -63,13 +63,6 @@ const instante = (valor) => {
   return Number.isFinite(t) ? new Date(t).toISOString() : null;
 };
 
-/** Rotulo do espaco: apelido da chave, apelido do nome, ou o nome do projeto. */
-function espacoDoProjeto(projeto = {}) {
-  return apelidoEspaco(projeto.key)
-    ?? apelidoEspaco(projeto.name)
-    ?? (String(projeto.name ?? '').trim() || String(projeto.key ?? '').trim() || 'Sem espaço');
-}
-
 /** Converte uma issue crua da API no registro gravado no banco (ou null). */
 export function registroDaIssue(issue) {
   const f = issue?.fields ?? {};
@@ -87,6 +80,8 @@ export function registroDaIssue(issue) {
     id_relator: f.reporter?.accountId ?? f.reporter?.key,
     prioridade: f.priority?.name,
     status,
+    // a API traz a categoria macro do status; vale quando o nome nao e conhecido
+    categoria_api: f.status?.statusCategory?.key,
     resolucao: f.resolution?.name,
     criado: f.created,
     atualizado: f.updated,
@@ -96,9 +91,7 @@ export function registroDaIssue(issue) {
   });
   if (!registro) return null;
 
-  // a API traz a categoria macro do status; usamos quando o nome nao e conhecido
-  registro.status_categoria = categoriaStatus(status, f.status?.statusCategory?.key);
-  registro.espaco = espacoDoProjeto(projeto);
+  registro.espaco = espacoDoProjeto(projeto.key, projeto.name);
   return registro;
 }
 

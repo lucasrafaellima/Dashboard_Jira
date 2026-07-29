@@ -3,15 +3,21 @@
 const $ = (sel) => document.querySelector(sel);
 
 const PALETA = ['#4472c4', '#e15759', '#70ad47', '#7c6bc4', '#4ec5d9', '#f0a22e', '#8c8c8c', '#2f6f9f', '#c0504d'];
+// rotulos canonicos produzidos pela padronizacao (src/normalizar.js)
 const COR_STATUS = {
-  'Feito': '#4472c4',
   'Concluído': '#70ad47',
   'A fazer': '#8faadc',
-  'Tarefas pendentes': '#b4c7e7',
-  'Fazendo': '#f0a22e',
-  'Em andamento': '#f6c66a',
-  'Em análise (QA)': '#7c6bc4',
-  'Esperando ação externa': '#8c8c8c',
+  'Em andamento': '#f0a22e',
+  'Em análise': '#7c6bc4',
+  'Aguardando': '#8c8c8c',
+  'Escalado': '#e15759',
+  'Cancelado': '#b0776f',
+};
+const COR_CATEGORIA = {
+  'A fazer': '#8faadc',
+  'Em andamento': '#f0a22e',
+  'Concluído': '#70ad47',
+  'Cancelado': '#b0776f',
 };
 const corStatus = (s) => COR_STATUS[s] || '#4472c4';
 
@@ -20,7 +26,7 @@ const estado = {
   responsaveis: new Set(),
   de: '',
   ate: '',
-  amplo: false,
+  incluirCancelados: false,
   dados: null,
 };
 
@@ -234,7 +240,7 @@ function queryFiltros() {
   if (estado.responsaveis.size) p.set('responsaveis', [...estado.responsaveis].join('|'));
   if (estado.de) p.set('de', estado.de);
   if (estado.ate) p.set('ate', estado.ate);
-  if (estado.amplo) p.set('amplo', '1');
+  if (estado.incluirCancelados) p.set('cancelados', '1');
   return p.toString();
 }
 
@@ -282,6 +288,7 @@ function renderizar(d, detalhe) {
     ['A fazer', num(i.aFazer)],
     ['Em andamento', num(i.emAndamento)],
     ['Concluídas', num(i.concluidas)],
+    ['Canceladas', num(i.canceladas)],
     ['Sem responsável', num(i.semResponsavel)],
     ['Fora do prazo (data limite vencida)', num(i.atrasadas)],
     ['Tempo médio até concluir', `${d.tempoDeConclusao.mediaDias} dias`],
@@ -307,6 +314,21 @@ function renderizar(d, detalhe) {
       </tr>`,
     )
     .join('') || '<tr><td colspan="9">Nenhuma atividade para os filtros selecionados.</td></tr>';
+
+  const padronizacao = d.padronizacao ?? [];
+  $('#tabela-padronizacao tbody').innerHTML = padronizacao
+    .map((p) => {
+      const origens = p.origens
+        .map((o) => `<span class="pilula ${o.rotulo === p.status ? 'origem-igual' : 'origem-unificada'}">${esc(o.rotulo)} · ${num(o.total)}</span>`)
+        .join(' ');
+      return `<tr>
+        <td><span class="pilula" style="background:${corStatus(p.status)}22;color:${corStatus(p.status)}">${esc(p.status)}</span></td>
+        <td>${esc(p.categoria)}</td>
+        <td>${num(p.total)}</td>
+        <td>${origens}</td>
+      </tr>`;
+    })
+    .join('') || '<tr><td colspan="4">Sem atividades para os filtros selecionados.</td></tr>';
 
   const sincronizacoes = d.sincronizacoes ?? [];
   const itensSync = sincronizacoes.reduce((s, x) => s + (x.itens || 0), 0);
@@ -551,7 +573,7 @@ function iniciar() {
   ligarSlicer($('#slicer-espacos'), estado.espacos);
   ligarSlicer($('#slicer-responsaveis'), estado.responsaveis);
 
-  $('#amplo').addEventListener('change', (e) => { estado.amplo = e.target.checked; carregar(); });
+  $('#cancelados').addEventListener('change', (e) => { estado.incluirCancelados = e.target.checked; carregar(); });
   $('#de').addEventListener('change', (e) => { estado.de = e.target.value; carregar(); });
   $('#ate').addEventListener('change', (e) => { estado.ate = e.target.value; carregar(); });
 
@@ -560,10 +582,10 @@ function iniciar() {
     estado.responsaveis.clear();
     estado.de = '';
     estado.ate = '';
-    estado.amplo = false;
+    estado.incluirCancelados = false;
     $('#de').value = '';
     $('#ate').value = '';
-    $('#amplo').checked = false;
+    $('#cancelados').checked = false;
     carregar();
   });
 

@@ -16,7 +16,18 @@ export function conectar() {
   db = new DatabaseSync(CAMINHO_BANCO);
   db.exec('PRAGMA journal_mode = WAL;');
   criarEsquema(db);
+  migrar(db);
   return db;
+}
+
+/** Colunas adicionadas depois que bancos ja existiam em uso. */
+function migrar(d) {
+  const colunas = new Set(d.prepare('PRAGMA table_info(itens)').all().map((c) => c.name));
+  if (!colunas.has('status_origem')) {
+    d.exec('ALTER TABLE itens ADD COLUMN status_origem TEXT;');
+    // nas linhas antigas o status gravado ainda e o nome original vindo do Jira
+    d.exec('UPDATE itens SET status_origem = status WHERE status_origem IS NULL;');
+  }
 }
 
 function criarEsquema(d) {
@@ -32,6 +43,7 @@ function criarEsquema(d) {
       id_relator       TEXT,
       prioridade       TEXT,
       status           TEXT,
+      status_origem    TEXT,
       status_categoria TEXT,
       resolucao        TEXT,
       criado           TEXT,
@@ -80,8 +92,8 @@ function criarEsquema(d) {
 
 const CAMPOS = [
   'chave', 'tipo_item', 'id_item', 'resumo', 'responsavel', 'id_responsavel',
-  'relator', 'id_relator', 'prioridade', 'status', 'status_categoria', 'resolucao',
-  'criado', 'atualizado', 'data_limite', 'projeto', 'origem', 'espaco',
+  'relator', 'id_relator', 'prioridade', 'status', 'status_origem', 'status_categoria',
+  'resolucao', 'criado', 'atualizado', 'data_limite', 'projeto', 'origem', 'espaco',
   'arquivo_origem', 'importado_em',
 ];
 

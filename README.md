@@ -108,19 +108,64 @@ Só `Chave da item` e `Status` são obrigatórias. O leitor:
   `26 de jun. de 2026, 10:28`;
 - aceita `.csv` com `;` ou `,`, BOM e aspas escapadas.
 
-### Normalizações aplicadas
+## Padronização dos dados
+
+Cada projeto do Jira tem o seu próprio workflow, então o mesmo conceito chega escrito de
+vários jeitos. Sem unificar, os cálculos saem errados: `FECHADO`, `Feito` e `Concluído`
+são a mesma coisa, mas contariam como três status diferentes.
+
+Toda linha — venha da API ou de planilha — passa pelas regras de `src/normalizar.js`:
+
+### Status
+
+| Vira | Categoria | Nomes aceitos |
+|---|---|---|
+| `Concluído` | Concluído | `Feito`, `FECHADO`, `Fechado`, `Resolvido`, `Pronto`, `Done`, `Closed`, `Resolved`, `Complete` |
+| `A fazer` | A fazer | `A Fazer`, `Tarefas pendentes`, `Backlog`, `To Do`, `Aberto`, `Open`, `Novo`, `Pendente` |
+| `Em andamento` | Em andamento | `Fazendo`, `In Progress`, `Em desenvolvimento`, `Em execução` |
+| `Em análise` | Em andamento | `Em análise (QA)`, `Em revisão`, `In Review`, `Code Review`, `Em homologação`, `Em teste` |
+| `Aguardando` | Em andamento | `Aguardando pelo suporte`, `Esperando ação externa`, `PAUSADO`, `Estacionamento`, `On Hold`, `Bloqueado` |
+| `Escalado` | Em andamento | `ESCALADO`, `Escalated` |
+| `Cancelado` | Cancelado | `Cancelada`, `Cancelled`, `Descartado`, `Rejeitado`, `Duplicado` |
+
+Status desconhecido **não é descartado**: mantém o próprio nome e herda a categoria que a
+API do Jira informou (`new` / `indeterminate` / `done`), então um workflow novo aparece no
+dashboard já classificado no funil certo.
+
+O nome original fica guardado na coluna `status_origem` e aparece na seção
+**Padronização de status** do dashboard — dá para conferir item a item o que foi unificado.
+
+### Prioridade, tipo e resolução
+
+| Vira | Nomes aceitos |
+|---|---|
+| `Altíssima` · `Alta` · `Média` · `Baixa` · `Baixíssima` | `Highest`, `Critical`, `Blocker`, `High`, `Major`, `Medium`, `Normal`, `Low`, `Minor`, `Lowest`, `Trivial` |
+| `Solicitação de Serviço`, `Incidente ou Interrupções`, `Subtarefa`, `Tarefa`, `História`, `Bug`, `Epic` | equivalentes em inglês (`Service Request`, `Incident`, `Sub-task`, `Task`, `Story`…) |
+| `Concluído`, `Não será feito`, `Duplicado`, `Sem solução` | `Itens concluídos`, `Won't Do`, `Não vai ser feito`, `Duplicate`, `Cannot Reproduce` |
+
+### Espaços
 
 | Origem do dado | Vira |
 |---|---|
-| `Subtask` / `Subtarefa` | `Subtarefa` |
-| célula vazia / `Sem responsável` | `(vazio)` |
-| `Workflow`, `Overflow`, `Davi`, `status-davi-25-07.csv` | `Workflow(Kestra)` |
-| `CRM Loja/Campo` | `CRM Loja` |
+| `Workflow`, `Overflow`, `Davi`, `WIK`, `status-davi-25-07.csv` | `Workflow(Kestra)` |
+| `CRM Loja/Campo`, `CRM` | `CRM Loja` |
 | `Hub`, `Hub Configurador` | `HUB`, `HUB Configurador` |
 
 O rótulo canônico do espaço fica na coluna `espaco` e é o que alimenta os gráficos —
 por isso planilhas antigas (onde `Origem` era o nome do arquivo `.csv`) somam junto com
-as novas sem bagunçar os totais. Para ajustar os apelidos, edite `src/normalizar.js`.
+as novas sem bagunçar os totais.
+
+### Mexeu nas regras? Repadronize a base
+
+As regras valem na hora da gravação. Depois de editar `src/normalizar.js`, rode:
+
+```bash
+npm run padronizar            # mostra o que mudaria, sem gravar
+npm run padronizar:aplicar    # grava as correções nos itens já existentes
+```
+
+Ele recalcula status, categoria, prioridade, tipo e resolução a partir do `status_origem`,
+sem precisar de uma sincronização completa.
 
 ## O que o dashboard mostra
 
@@ -132,13 +177,18 @@ as novas sem bagunçar os totais. Para ajustar os apelidos, edite `src/normaliza
 - **Extras**: evolução mensal (criadas × concluídas), por tipo, por prioridade, tempo médio/mediano até concluir, itens sem responsável, itens com data limite vencida, e a tabela detalhada.
 - Botão **PDF** usa a impressão do navegador (gráficos e cartões saem, tabelas e controles não).
 
-### “Concluído” conta como concluída?
+### O que conta como concluída
 
-Por padrão **não** — só o status `Feito` conta, que é o critério do DashBoard_Jira de
-referência (288 criadas · 188 concluídas · 65,28%).
+Toda atividade cuja **categoria** é `Concluído`, não importa o nome que o projeto de
+origem dá ao status. Como `FECHADO`, `Feito` e `Concluído` viram o mesmo rótulo, a taxa
+de conclusão passou a refletir a base inteira em vez de um workflow só.
 
-A base tem dois fluxos de trabalho diferentes: `Feito` (188) e `Concluído` (33). Marcando
-**“incluir Concluído”** no topo, os KPIs passam a considerar os dois (221 · 76,74%).
+**Cancelados ficam de fora** por padrão: foram encerrados, não entregues. Isso vale
+também para itens fechados com resolução `Won't Do` / `Não vai ser feito` / `Duplicado` —
+eles são reclassificados como `Cancelado` mesmo que o workflow os marque como fechados.
+O interruptor **“contar cancelados como concluídas”**, no topo, inclui os dois grupos.
+
+Com isso o funil fecha exato: `A fazer + Em andamento + Concluído + Cancelado = total`.
 
 ## Estrutura
 

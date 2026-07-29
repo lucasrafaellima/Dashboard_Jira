@@ -139,7 +139,7 @@ function lerFiltros(url) {
     status: lista('status'),
     de: data('de'),
     ate: data('ate'),
-    amplo: url.searchParams.get('amplo') === '1',
+    incluirCancelados: url.searchParams.get('cancelados') === '1',
   };
 }
 

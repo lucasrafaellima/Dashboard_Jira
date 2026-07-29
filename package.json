@@ -12,6 +12,8 @@
     "sync": "node tools/sincronizar.js",
     "sync:completa": "node tools/sincronizar.js --completa",
     "jira:testar": "node tools/sincronizar.js --testar",
+    "padronizar": "node tools/padronizar.js",
+    "padronizar:aplicar": "node tools/padronizar.js --aplicar",
     "import": "node tools/importar.js",
     "reset": "node tools/importar.js --reset"
   }

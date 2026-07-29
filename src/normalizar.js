@@ -112,49 +112,128 @@ export function normalizarData(valor) {
 
 export const SEM_RESPONSAVEL = '(vazio)';
 
-/** Categoria macro do status (para o funil A fazer / Em andamento / Concluido). */
-const CATEGORIA_STATUS = new Map(
-  Object.entries({
-    'a fazer': 'A fazer',
-    'tarefas pendentes': 'A fazer',
-    backlog: 'A fazer',
-    'em andamento': 'Em andamento',
-    fazendo: 'Em andamento',
-    'em analise qa': 'Em andamento',
-    'em analise': 'Em andamento',
-    'esperando acao externa': 'Em andamento',
-    'em revisao': 'Em andamento',
-    feito: 'Concluído',
-    concluido: 'Concluído',
-    cancelado: 'Cancelado',
-  }),
-);
+// Cada projeto do Jira tem o seu proprio workflow, entao o mesmo conceito chega
+// escrito de varios jeitos: "Feito", "FECHADO" e "Concluido" sao a mesma coisa,
+// assim como "A fazer" e "A Fazer". A tabela abaixo reduz tudo a um conjunto
+// pequeno de rotulos canonicos, cada um com a sua categoria macro.
+//
+// O nome original de cada item continua guardado na coluna `status_origem`, e
+// aparece na tabela de padronizacao do dashboard — nada e perdido.
+
+export const CATEGORIAS = ['A fazer', 'Em andamento', 'Concluído', 'Cancelado'];
+
+const STATUS_CANONICO = new Map();
+
+function padronizarStatus(rotulo, categoria, ...variantes) {
+  const destino = { rotulo, categoria };
+  STATUS_CANONICO.set(chaveComparacao(rotulo), destino);
+  for (const v of variantes) STATUS_CANONICO.set(chaveComparacao(v), destino);
+}
+
+padronizarStatus('A fazer', 'A fazer',
+  'A Fazer', 'Tarefas pendentes', 'Backlog', 'To Do', 'Aberto', 'Open', 'Novo', 'New', 'Pendente');
+
+padronizarStatus('Em andamento', 'Em andamento',
+  'Fazendo', 'In Progress', 'Em desenvolvimento', 'Em execução', 'Doing');
+
+padronizarStatus('Em análise', 'Em andamento',
+  'Em análise (QA)', 'Em analise QA', 'Em revisão', 'In Review', 'Code Review', 'Em homologação', 'Em teste');
+
+padronizarStatus('Aguardando', 'Em andamento',
+  'Aguardando pelo suporte', 'Esperando ação externa', 'PAUSADO', 'Estacionamento',
+  'Waiting', 'Waiting for support', 'On Hold', 'Em espera', 'Bloqueado', 'Blocked', 'Impedido');
+
+padronizarStatus('Escalado', 'Em andamento', 'ESCALADO', 'Escalated');
+
+padronizarStatus('Concluído', 'Concluído',
+  'Feito', 'FECHADO', 'Fechado', 'Concluido', 'Concluída', 'Resolvido', 'Pronto',
+  'Done', 'Closed', 'Resolved', 'Complete', 'Completed');
+
+padronizarStatus('Cancelado', 'Cancelado',
+  'Cancelada', 'Cancelled', 'Canceled', 'Descartado', 'Rejeitado', 'Rejected', 'Duplicado');
 
 /** Categorias da API do Jira (campo status.statusCategory.key). */
 const CATEGORIA_API = { new: 'A fazer', indeterminate: 'Em andamento', done: 'Concluído' };
 
 /**
- * @param {string} status nome do status
- * @param {string} [categoriaApi] chave da categoria vinda da API ("new"/"indeterminate"/"done"),
- *                 usada quando o nome do status nao esta na tabela acima.
+ * Reduz um status a { rotulo, categoria } canonicos.
+ * Status desconhecido mantem o proprio nome e usa a categoria que a API informou
+ * — assim um workflow novo nao some do dashboard nem e classificado errado.
+ * @param {string} status nome do status como veio do Jira
+ * @param {string} [categoriaApi] "new" | "indeterminate" | "done"
  */
+export function canonizarStatus(status, categoriaApi) {
+  const bruto = String(status ?? '').trim();
+  const conhecido = STATUS_CANONICO.get(chaveComparacao(bruto));
+  if (conhecido) return { ...conhecido, padronizado: true };
+  return {
+    rotulo: bruto || 'Sem status',
+    categoria: CATEGORIA_API[String(categoriaApi ?? '').toLowerCase()] ?? 'Outros',
+    padronizado: false,
+  };
+}
+
 export function categoriaStatus(status, categoriaApi) {
-  return CATEGORIA_STATUS.get(chaveComparacao(status))
-    ?? CATEGORIA_API[String(categoriaApi ?? '').toLowerCase()]
-    ?? 'Outros';
+  return canonizarStatus(status, categoriaApi).categoria;
 }
 
 /**
- * Status contados como "concluida".
- * Padrao = apenas "Feito", que reproduz exatamente os numeros do
- * DashBoard_Jira de referencia (188 concluidas / 65,28%).
- * Modo amplo = todo status cuja categoria e "Concluido" (inclui "Concluído").
+ * Uma atividade conta como concluida quando a categoria dela e "Concluído",
+ * independente do nome que o projeto de origem usa.
+ * Cancelados ficam de fora por padrao: nao foram entregues, so encerrados.
+ * @param {string} status status (canonico ou bruto)
+ * @param {boolean} [incluirCancelados] soma tambem os cancelados
  */
-export const STATUS_CONCLUIDO_PADRAO = ['Feito'];
+export function ehConcluida(status, incluirCancelados = false) {
+  const c = categoriaStatus(status);
+  return c === 'Concluído' || (incluirCancelados && c === 'Cancelado');
+}
 
-export function ehConcluida(status, amplo = false) {
-  if (amplo) return categoriaStatus(status) === 'Concluído';
-  return STATUS_CONCLUIDO_PADRAO.some((s) => chaveComparacao(s) === chaveComparacao(status));
+// ------------------------------------------------------------ prioridade
+
+const PRIORIDADE_CANONICA = new Map();
+function padronizarPrioridade(rotulo, ...variantes) {
+  PRIORIDADE_CANONICA.set(chaveComparacao(rotulo), rotulo);
+  for (const v of variantes) PRIORIDADE_CANONICA.set(chaveComparacao(v), rotulo);
+}
+padronizarPrioridade('Altíssima', 'Highest', 'Crítica', 'Critical', 'Blocker', 'Altissima', 'Urgente');
+padronizarPrioridade('Alta', 'High', 'Major');
+padronizarPrioridade('Média', 'Medium', 'Normal', 'Media');
+padronizarPrioridade('Baixa', 'Low', 'Minor');
+padronizarPrioridade('Baixíssima', 'Lowest', 'Trivial', 'Baixissima');
+
+/** Ordem para os graficos, da mais urgente para a menos. */
+export const ORDEM_PRIORIDADE = ['Altíssima', 'Alta', 'Média', 'Baixa', 'Baixíssima', 'Sem prioridade'];
+
+export function normalizarPrioridade(prioridade) {
+  const s = String(prioridade ?? '').trim();
+  if (!s) return 'Sem prioridade';
+  return PRIORIDADE_CANONICA.get(chaveComparacao(s)) ?? s;
+}
+
+// ------------------------------------------------------------ resolucao
+
+const RESOLUCAO_CANONICA = new Map();
+function padronizarResolucao(rotulo, ...variantes) {
+  RESOLUCAO_CANONICA.set(chaveComparacao(rotulo), rotulo);
+  for (const v of variantes) RESOLUCAO_CANONICA.set(chaveComparacao(v), rotulo);
+}
+padronizarResolucao('Concluído', 'Itens concluídos', 'Itens concluidos', 'Done', 'Feito', 'Resolvido', 'Resolved', 'Pronto', 'Fixed');
+padronizarResolucao('Não será feito', "Won't Do", 'Nao vai ser feito', 'Não vai ser feito', "Won't Fix", 'Descartado', 'Declined');
+padronizarResolucao('Duplicado', 'Duplicate', 'Duplicada', 'Duplicate Issue');
+padronizarResolucao('Sem solução', 'Cannot Reproduce', 'Não reproduzível', 'Incompleto', 'Incomplete', 'Inconclusivo');
+
+/** Resolucoes que significam "encerrado sem entregar" — nao contam como concluida. */
+const RESOLUCAO_NAO_ENTREGUE = new Set(['Não será feito', 'Duplicado', 'Sem solução']);
+
+export function normalizarResolucao(resolucao) {
+  const s = String(resolucao ?? '').trim();
+  if (!s) return '';
+  return RESOLUCAO_CANONICA.get(chaveComparacao(s)) ?? s;
+}
+
+export function ehResolucaoNaoEntregue(resolucao) {
+  return RESOLUCAO_NAO_ENTREGUE.has(normalizarResolucao(resolucao));
 }
 
 // ------------------------------------------------------------ espacos
@@ -180,6 +259,17 @@ apelidar('APP Receituário', 'APP Receituario', 'App Receituário', 'AR', 'statu
 export function apelidoEspaco(valor) {
   const s = String(valor ?? '').trim();
   return s ? APELIDO_ESPACO.get(chaveComparacao(s)) ?? null : null;
+}
+
+/**
+ * Rotulo do espaco para dados vindos da API: apelido da chave do projeto,
+ * apelido do nome, ou o proprio nome. Usado tanto na sincronizacao quanto na
+ * repadronizacao da base, para os dois nunca discordarem.
+ */
+export function espacoDoProjeto(chaveProjeto, nomeProjeto) {
+  return apelidoEspaco(chaveProjeto)
+    ?? apelidoEspaco(nomeProjeto)
+    ?? (String(nomeProjeto ?? '').trim() || String(chaveProjeto ?? '').trim() || 'Sem espaço');
 }
 
 function titulo(s) {
@@ -211,6 +301,7 @@ export function normalizarEspaco(origem, projeto, chave) {
 const APELIDO_TIPO = new Map(
   Object.entries({
     subtask: 'Subtarefa',
+    'sub task': 'Subtarefa',
     subtarefa: 'Subtarefa',
     'sub tarefa': 'Subtarefa',
     task: 'Tarefa',
@@ -218,9 +309,24 @@ const APELIDO_TIPO = new Map(
     story: 'História',
     historia: 'História',
     bug: 'Bug',
+    defect: 'Bug',
     epic: 'Epic',
     epico: 'Epic',
     funcao: 'Função',
+    // Jira Service Management, que responde pela maior parte da base
+    'service request': 'Solicitação de Serviço',
+    'solicitacao de servico': 'Solicitação de Serviço',
+    'service request with approvals': 'Solicitação de Serviço (Aprovação)',
+    'solicitacao de servico aprovacao': 'Solicitação de Serviço (Aprovação)',
+    incident: 'Incidente ou Interrupções',
+    incidente: 'Incidente ou Interrupções',
+    'incidente ou interrupcoes': 'Incidente ou Interrupções',
+    problem: 'Problema',
+    problema: 'Problema',
+    change: 'Mudança',
+    mudanca: 'Mudança',
+    idea: 'Ideia',
+    ideia: 'Ideia',
   }),
 );
 
@@ -244,14 +350,26 @@ export function normalizarPessoa(nome) {
 /**
  * Converte uma linha crua (objeto campo->valor) no registro final gravado no banco.
  * Devolve null se a linha nao tiver chave.
+ *
+ * O status e a resolucao passam pela padronizacao: o nome original fica em
+ * `status_origem` e o rotulo unificado em `status`. Quando a resolucao diz que o
+ * item foi encerrado sem entregar ("Won't Do", duplicado...), ele vira Cancelado
+ * mesmo que o workflow o tenha marcado como fechado.
  */
 export function normalizarLinha(bruto) {
   const chave = String(bruto.chave ?? '').trim().toUpperCase();
   if (!chave || !/^[A-Z][A-Z0-9]*-\d+$/.test(chave)) return null;
 
-  const status = String(bruto.status ?? '').trim() || 'Sem status';
+  const statusOrigem = String(bruto.status ?? '').trim() || 'Sem status';
   const origem = String(bruto.origem ?? '').trim();
   const projeto = String(bruto.projeto ?? '').trim();
+
+  const resolucao = normalizarResolucao(bruto.resolucao);
+  let { rotulo: status, categoria } = canonizarStatus(statusOrigem, bruto.categoria_api);
+  if (categoria === 'Concluído' && ehResolucaoNaoEntregue(resolucao)) {
+    status = 'Cancelado';
+    categoria = 'Cancelado';
+  }
 
   return {
     chave,
@@ -262,10 +380,11 @@ export function normalizarLinha(bruto) {
     id_responsavel: String(bruto.id_responsavel ?? '').trim(),
     relator: normalizarPessoa(bruto.relator),
     id_relator: String(bruto.id_relator ?? '').trim(),
-    prioridade: String(bruto.prioridade ?? '').trim() || 'Sem prioridade',
+    prioridade: normalizarPrioridade(bruto.prioridade),
     status,
-    status_categoria: categoriaStatus(status),
-    resolucao: String(bruto.resolucao ?? '').trim(),
+    status_origem: statusOrigem,
+    status_categoria: categoria,
+    resolucao,
     criado: normalizarData(bruto.criado),
     atualizado: normalizarData(bruto.atualizado),
     data_limite: normalizarData(bruto.data_limite),

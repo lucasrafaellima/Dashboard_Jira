@@ -226,6 +226,9 @@ td.resumo { max-width: 380px; }
 .etiqueta.ok { background: rgba(112,173,71,.28); color: #dff5d3; }
 .etiqueta.alerta { background: rgba(225,87,89,.3); color: #ffdedd; }
 
+.origem-igual { background: #eef3fa; color: var(--suave); font-weight: 400; }
+.origem-unificada { background: #fdf3e2; color: #a06a12; margin-right: 3px; }
+
 .ok-pilula { background: #eaf6e3; color: #4b7f2f; }
 .erro-pilula { background: #fdecec; color: #b03a3a; cursor: help; }
 
