@@ -242,13 +242,136 @@ td.resumo { max-width: 380px; }
 .ok-pilula { background: #eaf6e3; color: #4b7f2f; }
 .erro-pilula { background: #fdecec; color: #b03a3a; cursor: help; }
 
-/* ------------------------------------------------------------ impressao */
+/* ------------------------------------------------------------ impressao (PDF)
+
+   O PDF e um relatorio, nao um retrato da tela: entra capa com periodo e
+   filtros, saem os controles e as tabelas operacionais, e a grade e remontada
+   em paisagem para os graficos ganharem largura.                            */
+
+/* blocos que so existem no papel */
+.so-impressao { display: none; }
+
+@page {
+  size: A4 landscape;
+  margin: 11mm 10mm 15mm;
+}
 
 @media print {
-  .topo .acoes, .modal, .tabela-secao, .btn-mini { display: none !important; }
-  body { background: #fff; }
-  .topo { position: static; background: #fff; color: var(--azul-escuro); border-bottom: 2px solid var(--azul); }
-  .topo .sub { color: var(--suave); }
-  .cartao { break-inside: avoid; }
-  .painel { padding: 0; }
+  /* Sem isto o navegador descarta os fundos: os KPIs sairiam com texto branco
+     sobre branco e as pilulas de status perderiam a cor. */
+  *, *::before, *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  html, body { background: #fff; font-size: 11px; }
+
+  /* fora do relatorio: controles, modais e o que e operacao, nao analise */
+  .topo, .modal, .tabela-secao, .btn, .btn-mini,
+  #secao-sincronizacoes, #secao-importacoes { display: none !important; }
+
+  /* ---------------------------------------------------------- capa e rodape */
+
+  #capa-relatorio {
+    display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+    gap: 3mm; padding-bottom: 3mm; margin-bottom: 1mm;
+    border-bottom: 2.5px solid var(--azul);
+  }
+  #capa-relatorio h1 {
+    margin: 0; font-size: 19px; font-weight: 600;
+    color: var(--azul-escuro); letter-spacing: .2px;
+  }
+  .capa-linha { margin: 3px 0 0; font-size: 11px; color: var(--suave); }
+  .capa-meta { text-align: right; font-size: 10.5px; color: var(--suave); line-height: 1.5; }
+  .capa-meta p { margin: 0; }
+  .capa-meta b { color: var(--azul-escuro); font-weight: 600; }
+  .capa-filtros { flex-basis: 100%; margin: 1mm 0 0; font-size: 10.5px; color: var(--texto); }
+  .capa-filtros b { color: var(--azul-escuro); }
+  .capa-etiqueta {
+    display: inline-block; margin-right: 6px; padding: 1px 8px; border-radius: 20px;
+    background: var(--azul-claro); color: var(--azul-escuro);
+    font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+  }
+
+  #rodape-relatorio {
+    display: flex; justify-content: space-between; gap: 10mm;
+    position: fixed; left: 0; right: 0; bottom: 0;
+    padding-top: 1.5mm; border-top: 1px solid #dbe4ef;
+    font-size: 8.5px; color: var(--suave);
+  }
+
+  /* ---------------------------------------------------------- grade do papel
+
+     .linha vira `display: contents` para os cartoes virarem filhos diretos da
+     grade de 6 colunas — assim da para reordenar e dimensionar cada um. */
+
+  .painel {
+    display: grid; grid-template-columns: repeat(6, 1fr);
+    gap: 5mm; padding: 0; max-width: none; align-content: start;
+  }
+  .linha { display: contents; }
+
+  #capa-relatorio          { grid-column: span 6; order: 0; }
+  #card-kpis               { grid-column: span 6; order: 1; }
+  #card-status             { grid-column: span 4; order: 2; }
+  #card-panorama           { grid-column: span 2; order: 3; }
+  #card-espacos-lista      { grid-column: span 3; order: 4; }
+  #card-responsaveis-lista { grid-column: span 3; order: 5; }
+  #card-mensal             { grid-column: span 6; order: 6; }
+  #card-pizza              { grid-column: span 3; order: 7; }
+  #card-espacos            { grid-column: span 3; order: 8; }
+  #card-tipos              { grid-column: span 3; order: 9; }
+  #card-prioridades        { grid-column: span 3; order: 10; }
+  #secao-padronizacao      { grid-column: span 6; order: 11; }
+
+  .cartao {
+    break-inside: avoid;
+    border: 1px solid #d7e1ee; border-radius: 5px;
+    padding: 7px 9px 9px;
+  }
+  .cartao h2 {
+    font-size: 11.5px; margin-bottom: 6px; padding-bottom: 4px;
+    border-bottom: 1px solid #eaf0f7;
+  }
+  .cartao h2 .sub { font-size: 9.5px; }
+
+  /* ---------------------------------------------------------- KPIs */
+
+  #card-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5mm; flex-direction: row; }
+  .kpi { min-height: 0; padding: 8px 10px; border-radius: 5px; }
+  .kpi strong { font-size: 27px; }
+  .kpi span { font-size: 10px; margin-top: 2px; }
+
+  /* ---------------------------------------------------------- listas */
+
+  /* na tela elas rolam; no papel rolagem vira corte, entao abrem em 2 colunas */
+  .slicer {
+    max-height: none; overflow: visible;
+    display: block; columns: 2; column-gap: 4mm;
+  }
+  .slicer li {
+    break-inside: avoid; margin-bottom: 3px;
+    padding: 2px 6px; font-size: 9.5px; border-radius: 3px;
+  }
+
+  .lista-panorama { gap: 4px; }
+  .lista-panorama li { font-size: 10px; padding-bottom: 3px; break-inside: avoid; }
+
+  /* ---------------------------------------------------------- tabelas */
+
+  .rolagem, .rolagem.baixa { max-height: none; overflow: visible; border: 0; border-radius: 0; }
+  table { font-size: 9.5px; }
+  thead { display: table-header-group; }
+  thead th { position: static; padding: 4px 6px; }
+  tbody td { padding: 3px 6px; }
+  tbody tr { break-inside: avoid; }
+  tbody tr:hover { background: transparent; }
+  .pilula { font-size: 9px; padding: 0 6px; }
+
+  /* ---------------------------------------------------------- graficos */
+
+  .area-grafico svg { overflow: visible; }
+  .eixo { font-size: 10.5px; }
+  .legenda { font-size: 11px; }
+  .rotulo-valor { font-size: 10.5px; }
 }

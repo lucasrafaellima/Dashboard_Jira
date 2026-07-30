@@ -199,7 +199,18 @@ sem precisar de uma sincronização completa.
 - **Tickets criados por espaços** — barras horizontais.
 - **KPIs**: atividades criadas, concluídas e taxa de conclusão.
 - **Extras**: evolução mensal (criadas × concluídas), por tipo, por prioridade, tempo médio/mediano até concluir, itens sem responsável, itens com data limite vencida, e a tabela detalhada.
-- Botão **PDF** usa a impressão do navegador (gráficos e cartões saem, tabelas e controles não).
+- Botão **PDF** usa a impressão do navegador, mas o que sai é um relatório, não uma foto da tela:
+  - **A4 paisagem**, com capa (período coberto, filtros aplicados, data de geração e site do Jira
+    de origem) e rodapé repetido em todas as páginas;
+  - a ordem muda para leitura: KPIs → status e panorama → espaços e responsáveis → evolução
+    mensal → demais gráficos → padronização de status;
+  - as listas de **Espaços** e **Responsável** saem inteiras, em duas colunas — na tela elas rolam,
+    no papel rolagem viraria corte;
+  - ficam de fora os controles, a tabela de atividades (essa vai no Excel) e as tabelas
+    operacionais de sincronização e importação.
+  - Se os cartões azuis saírem sem cor, ligue **“Gráficos de plano de fundo”** nas opções de
+    impressão do navegador — o CSS já pede `print-color-adjust: exact`, mas alguns navegadores
+    respeitam apenas a caixa de seleção.
 - Botão **⤓ Excel**, no título da tabela **Atividades**, baixa um `.xlsx` com as mesmas
   colunas da tela. Ele respeita os filtros ativos (espaços, responsáveis, período,
   cancelados): com filtro, só vem o que está filtrado. A tela mostra no máximo 500 linhas,

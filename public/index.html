@@ -30,35 +30,48 @@
 
 <main id="painel" class="painel">
 
+  <!-- capa do relatorio: so aparece na impressao/PDF -->
+  <section id="capa-relatorio" class="so-impressao">
+    <div class="capa-identidade">
+      <h1>Relatório de Atividades — Jira</h1>
+      <p id="capa-periodo" class="capa-linha"></p>
+    </div>
+    <div class="capa-meta">
+      <p id="capa-gerado"></p>
+      <p id="capa-origem"></p>
+    </div>
+    <p id="capa-filtros" class="capa-filtros"></p>
+  </section>
+
   <section class="linha linha-1">
-    <div class="cartao segmentacao">
+    <div id="card-espacos-lista" class="cartao segmentacao">
       <h2>Espaços</h2>
       <ul id="slicer-espacos" class="slicer"></ul>
     </div>
 
-    <div class="cartao segmentacao">
+    <div id="card-responsaveis-lista" class="cartao segmentacao">
       <h2>Responsável</h2>
       <ul id="slicer-responsaveis" class="slicer"></ul>
     </div>
 
-    <div class="cartao grafico">
+    <div id="card-status" class="cartao grafico">
       <h2>Status das Atividades</h2>
       <div id="grafico-status" class="area-grafico"></div>
     </div>
   </section>
 
   <section class="linha linha-2">
-    <div class="cartao grafico">
+    <div id="card-pizza" class="cartao grafico">
       <h2>Atividades concluídas por responsável</h2>
       <div id="grafico-responsaveis" class="area-grafico"></div>
     </div>
 
-    <div class="cartao grafico">
+    <div id="card-espacos" class="cartao grafico">
       <h2>Tickets criados por espaços</h2>
       <div id="grafico-espacos" class="area-grafico"></div>
     </div>
 
-    <div class="coluna-kpis">
+    <div id="card-kpis" class="coluna-kpis">
       <div class="kpi">
         <strong id="kpi-criadas">–</strong>
         <span>Atividades criadas</span>
@@ -75,23 +88,23 @@
   </section>
 
   <section class="linha linha-3">
-    <div class="cartao grafico largo">
+    <div id="card-mensal" class="cartao grafico largo">
       <h2>Evolução mensal — criadas x concluídas</h2>
       <div id="grafico-mensal" class="area-grafico"></div>
     </div>
 
-    <div class="cartao">
+    <div id="card-panorama" class="cartao">
       <h2>Panorama</h2>
       <ul id="panorama" class="lista-panorama"></ul>
     </div>
   </section>
 
   <section class="linha linha-4">
-    <div class="cartao grafico">
+    <div id="card-tipos" class="cartao grafico">
       <h2>Por tipo de item</h2>
       <div id="grafico-tipos" class="area-grafico"></div>
     </div>
-    <div class="cartao grafico">
+    <div id="card-prioridades" class="cartao grafico">
       <h2>Por prioridade</h2>
       <div id="grafico-prioridades" class="area-grafico"></div>
     </div>
@@ -116,7 +129,7 @@
     </div>
   </section>
 
-  <section class="cartao">
+  <section id="secao-padronizacao" class="cartao">
     <h2>Padronização de status <span class="sub">— nomes vindos do Jira que foram unificados; o original de cada item fica guardado</span></h2>
     <div class="rolagem baixa">
       <table id="tabela-padronizacao">
@@ -128,7 +141,7 @@
     </div>
   </section>
 
-  <section class="cartao">
+  <section id="secao-sincronizacoes" class="cartao">
     <h2>Origens sincronizadas do Jira <span id="resumo-sync" class="sub"></span></h2>
     <div class="rolagem baixa">
       <table id="tabela-sincronizacoes">
@@ -140,7 +153,7 @@
     </div>
   </section>
 
-  <section class="cartao">
+  <section id="secao-importacoes" class="cartao">
     <h2>Planilhas importadas <span class="sub">— opcional, para dados que não vêm da API</span></h2>
     <div class="rolagem baixa">
       <table id="tabela-importacoes">
@@ -152,6 +165,11 @@
     </div>
   </section>
 </main>
+
+<footer id="rodape-relatorio" class="so-impressao">
+  <span>Dashboard Jira · relatório gerado a partir da base sincronizada</span>
+  <span id="rodape-detalhe"></span>
+</footer>
 
 <div id="modal-jira" class="modal oculto">
   <div class="modal-caixa larga">

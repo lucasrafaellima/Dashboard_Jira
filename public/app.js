@@ -28,6 +28,7 @@ const estado = {
   ate: '',
   incluirCancelados: false,
   dados: null,
+  origemJira: '',
 };
 
 // ------------------------------------------------------------ utilidades
@@ -115,7 +116,8 @@ function barrasHorizontais(dados, { cor } = {}) {
 
   const L = 560;
   const alturaLinha = 26;
-  const margem = { top: 10, dir: 54, baixo: 10, esq: 130 };
+  // margem esquerda larga o bastante para nomes como "Acompanhamento - Gestão"
+  const margem = { top: 10, dir: 54, baixo: 10, esq: 152 };
   const A = margem.top + margem.baixo + dados.length * alturaLinha;
   const larguraUtil = L - margem.esq - margem.dir;
   const max = Math.max(...dados.map((d) => d.total)) || 1;
@@ -124,7 +126,7 @@ function barrasHorizontais(dados, { cor } = {}) {
   dados.forEach((d, i) => {
     const y = margem.top + i * alturaLinha;
     const larg = (d.total / max) * larguraUtil;
-    const rotulo = String(d.rotulo).length > 20 ? `${String(d.rotulo).slice(0, 19)}…` : d.rotulo;
+    const rotulo = String(d.rotulo).length > 25 ? `${String(d.rotulo).slice(0, 24)}…` : d.rotulo;
     saida += `<text class="eixo" x="${margem.esq - 8}" y="${y + alturaLinha / 2 + 3}" text-anchor="end">${esc(rotulo)}<title>${esc(d.rotulo)}</title></text>`;
     saida += `<rect x="${margem.esq}" y="${y + 4}" width="${Math.max(larg, 1)}" height="${alturaLinha - 10}" fill="${cor ? cor(d.rotulo) : PALETA[0]}" rx="2"><title>${esc(d.rotulo)}: ${d.total}</title></rect>`;
     saida += `<text class="rotulo-valor" x="${margem.esq + larg + 7}" y="${y + alturaLinha / 2 + 4}">${d.total}</text>`;
@@ -137,7 +139,10 @@ function pizza(dados) {
   const validos = dados.filter((d) => d.total > 0);
   if (!validos.length) return vazio();
 
-  const L = 560, A = 270;
+  const L = 560;
+  // a legenda cresce com o numero de responsaveis; o quadro acompanha para ela
+  // nao vazar o cartao (na impressao isso virava texto por cima da borda)
+  const A = Math.max(270, 44 + validos.length * 24);
   const cx = 140, cy = A / 2, r = 100;
   const total = validos.reduce((s, d) => s + d.total, 0);
 
@@ -208,6 +213,51 @@ function barrasAgrupadas(serie) {
   return svg(L, A, saida);
 }
 
+// ------------------------------------------------------------ capa do relatorio
+
+/** Lista curta com reticencias — evita uma capa gigante quando ha muitos filtros. */
+function listaCurta(conjunto, limite = 6) {
+  const itens = [...conjunto];
+  if (itens.length <= limite) return itens.join(', ');
+  return `${itens.slice(0, limite).join(', ')} +${itens.length - limite}`;
+}
+
+/**
+ * Preenche o cabecalho e o rodape que so aparecem no PDF. Sem isso o relatorio
+ * sai sem dizer de que periodo ele fala nem que filtros estavam ligados.
+ */
+function montarCapaRelatorio(d, detalhe) {
+  const i = d.indicadores;
+  const periodo = d.periodo.inicio
+    ? `${dataCurta(d.periodo.inicio).slice(0, 10)} a ${dataCurta(d.periodo.fim).slice(0, 10)}`
+    : 'sem período definido';
+
+  $('#capa-periodo').textContent =
+    `${num(i.criadas)} atividades no recorte · período ${periodo} · base com ${num(d.baseTotal)} atividades`;
+
+  const agora = new Date();
+  $('#capa-gerado').innerHTML =
+    `<b>Gerado em</b> ${agora.toLocaleDateString('pt-BR')} às ${agora.toLocaleTimeString('pt-BR').slice(0, 5)}`;
+  $('#capa-origem').textContent = estado.origemJira ? `Origem: ${estado.origemJira}` : '';
+
+  const filtros = [];
+  if (estado.espacos.size) filtros.push(`<b>Espaços:</b> ${esc(listaCurta(estado.espacos))}`);
+  if (estado.responsaveis.size) filtros.push(`<b>Responsáveis:</b> ${esc(listaCurta(estado.responsaveis))}`);
+  if (estado.de || estado.ate) {
+    const de = estado.de ? dataCurta(estado.de).slice(0, 10) : 'início';
+    const ate = estado.ate ? dataCurta(estado.ate).slice(0, 10) : 'hoje';
+    filtros.push(`<b>Criadas entre:</b> ${de} e ${ate}`);
+  }
+  if (estado.incluirCancelados) filtros.push('<b>Cancelados</b> contam como concluídas');
+
+  $('#capa-filtros').innerHTML = filtros.length
+    ? `<span class="capa-etiqueta">Filtros aplicados</span> ${filtros.join(' &nbsp;·&nbsp; ')}`
+    : '<span class="capa-etiqueta">Sem filtros</span> o relatório cobre a base inteira';
+
+  $('#rodape-detalhe').textContent =
+    `${num(detalhe.total)} atividades no recorte · ${agora.toLocaleDateString('pt-BR')}`;
+}
+
 // ------------------------------------------------------------ slicers
 
 function montarSlicer(el, opcoes, selecionadas, contagens) {
@@ -266,6 +316,8 @@ function renderizar(d, detalhe) {
     : 'sem período';
   $('#resumo-base').textContent =
     `${num(d.baseTotal)} atividades na base · ${num(i.criadas)} no filtro · ${periodo}`;
+
+  montarCapaRelatorio(d, detalhe);
 
   const contEspaco = new Map(d.porEspaco.map((x) => [x.rotulo, x.total]));
   const contResp = new Map(d.criadasPorResponsavel.map((x) => [x.rotulo, x.total]));
@@ -451,6 +503,10 @@ function pintarStatusJira(cfg, sincronizacoes = []) {
     el.title = 'Clique em "Configurar Jira" para conectar a API.';
     return;
   }
+  // a capa do PDF pode ter sido montada antes desta resposta chegar
+  estado.origemJira = cfg.url.replace(/^https?:\/\//, '');
+  $('#capa-origem').textContent = estado.origemJira ? `Origem: ${estado.origemJira}` : '';
+
   const comErro = sincronizacoes.filter((s) => s.erro);
   const ultima = sincronizacoes
     .map((s) => s.sincronizado_em)
