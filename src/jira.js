@@ -154,28 +154,34 @@ async function paginaLegada(cfg, jql, campos, inicio) {
 }
 
 /**
- * Percorre todas as paginas de uma consulta JQL.
+ * Percorre uma consulta JQL pagina a pagina, sem acumular nada.
+ *
+ * Quem consome grava cada pagina antes de pedir a proxima: o pico de memoria
+ * nao cresce com o tamanho do projeto e o que ja foi lido nao se perde se a
+ * pagina seguinte falhar.
+ *
  * @param {object} cfg configuracao (url, email, token, maxIssues)
  * @param {string} jql consulta
- * @param {{campos?:string[], limite?:number, aoProgredir?:(lidas:number)=>void}} opcoes
- * @returns {Promise<object[]>} issues cruas da API
+ * @param {{campos?:string[], limite?:number}} opcoes
+ * @yields {{issues:object[], lidas:number, pagina:number, ultima:boolean, truncado:boolean, total:number|null}}
  */
-export async function buscarIssues(cfg, jql, opcoes = {}) {
+export async function* paginasDeIssues(cfg, jql, opcoes = {}) {
   const campos = opcoes.campos ?? CAMPOS_PADRAO;
   const limite = opcoes.limite ?? cfg.maxIssues ?? 20000;
-  const issues = [];
 
   let modo = dialeto.get(cfg.url) ?? null;
   let token = null;
   let inicio = 0;
+  let lidas = 0;
+  let numero = 0;
 
   for (;;) {
-    let pagina;
+    let resposta;
     if (modo === 'legado') {
-      pagina = await paginaLegada(cfg, jql, campos, inicio);
+      resposta = await paginaLegada(cfg, jql, campos, inicio);
     } else {
       try {
-        pagina = await paginaNova(cfg, jql, campos, token);
+        resposta = await paginaNova(cfg, jql, campos, token);
         modo = 'jql';
       } catch (e) {
         // sites Server/DC (e Cloud antigo) nao tem /search/jql
@@ -189,23 +195,41 @@ export async function buscarIssues(cfg, jql, opcoes = {}) {
     }
     dialeto.set(cfg.url, modo);
 
-    const lote = pagina?.issues ?? [];
-    issues.push(...lote);
-    opcoes.aoProgredir?.(issues.length);
+    const total = Number(resposta?.total ?? 0) || null;
+    let lote = resposta?.issues ?? [];
+    const excedeu = lidas + lote.length > limite;
+    if (excedeu) lote = lote.slice(0, Math.max(limite - lidas, 0));
 
-    if (issues.length >= limite) break;
+    const acabou = modo === 'legado'
+      ? (!lote.length || inicio + lote.length >= (total ?? 0))
+      : (resposta?.isLast === true || !resposta?.nextPageToken || !lote.length);
 
-    if (modo === 'legado') {
-      inicio += lote.length;
-      const total = Number(pagina?.total ?? 0);
-      if (!lote.length || inicio >= total) break;
-    } else {
-      token = pagina?.nextPageToken ?? null;
-      if (pagina?.isLast === true || !token || !lote.length) break;
-    }
+    lidas += lote.length;
+    numero++;
+    // "truncado" = paramos pelo limite, nao porque o Jira acabou de responder
+    const truncado = excedeu || (lidas >= limite && !acabou);
+    const ultima = truncado || acabou;
+
+    yield { issues: lote, lidas, pagina: numero, ultima, truncado, total };
+    if (ultima) return;
+
+    if (modo === 'legado') inicio += lote.length;
+    else token = resposta?.nextPageToken ?? null;
   }
+}
 
-  return issues.slice(0, limite);
+/**
+ * Todas as issues de uma consulta, de uma vez.
+ * Conveniencia para chamadas pequenas — a sincronizacao usa `paginasDeIssues`.
+ * @returns {Promise<object[]>} issues cruas da API
+ */
+export async function buscarIssues(cfg, jql, opcoes = {}) {
+  const issues = [];
+  for await (const pagina of paginasDeIssues(cfg, jql, opcoes)) {
+    issues.push(...pagina.issues);
+    opcoes.aoProgredir?.(issues.length);
+  }
+  return issues;
 }
 
 /** Escapa um literal para uso dentro de aspas em JQL. */

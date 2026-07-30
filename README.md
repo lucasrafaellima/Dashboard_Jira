@@ -48,12 +48,36 @@ Com `JIRA_INTERVALO_MIN` maior que zero, o servidor sincroniza sozinho nesse int
 
 ### Como funciona a sincronização
 
+**Um projeto de cada vez.** Deixar `JIRA_PROJETOS` (ou o campo *Projetos* da tela) em
+branco significa *todos os projetos visíveis*: o dashboard lista os projetos na API e
+sincroniza cada um como uma origem separada, em sequência, com uma pausa curta entre
+eles. Nada de uma consulta gigante com o site inteiro — assim um projeto grande ou com
+erro de permissão não derruba a passada dos outros.
+
+Dentro de cada projeto a leitura é **página a página** (100 issues) e cada página é
+gravada antes de a próxima ser pedida. O consumo de memória não cresce com o tamanho do
+projeto, e se a conexão cair no meio, o que já entrou fica na base — a passada seguinte
+retoma de onde parou em vez de reler tudo.
+
 A primeira passada traz o histórico inteiro. Depois, o dashboard guarda por projeto a
 data da issue mais recente que viu e pede ao Jira apenas `updated >= (essa data - 15 min)` —
 por isso as sincronizações seguintes levam segundos.
 
 Cada projeto vira uma linha na tabela **Origens sincronizadas do Jira**, no rodapé,
 com a data da última passada, o resultado e um botão para remover a origem inteira.
+Durante a passada, a tela mostra o andamento (`Projeto 4/11 — CRM: 1.200 issues lidas`)
+e atualiza os gráficos conforme cada projeto termina.
+
+Ajustes finos (só via `.env` ou `config/jira.json`):
+
+| Chave | `.env` | Padrão | Para que serve |
+|---|---|---|---|
+| `maxIssues` | `JIRA_MAX_ISSUES` | 20000 | teto de issues **por projeto em cada passada**; o resto vem na próxima |
+| `pausaMs` | `JIRA_PAUSA_MS` | 400 | pausa entre um projeto e o seguinte, para não esbarrar no limite do Jira |
+
+Quando um projeto bate o `maxIssues`, a passada avisa e a **remoção de issues ausentes
+não roda** para aquele projeto — ela só age quando a leitura foi completa, senão apagaria
+issues que apenas não foram lidas.
 
 Jira Server / Data Center também funciona: gere um *Personal Access Token*, deixe
 `JIRA_EMAIL` vazio e o cliente autentica com `Bearer` e cai no endpoint de busca antigo.
@@ -221,7 +245,8 @@ docs/                  guia de configuração do Jira
 | `POST /api/jira/config` | salva a configuração em `config/jira.json` |
 | `POST /api/jira/testar` | testa credenciais (aceita URL/e-mail/token no corpo) |
 | `GET /api/jira/projetos` | projetos visíveis para a conta |
-| `POST /api/jira/sincronizar[?completa=1]` | dispara a sincronização |
+| `POST /api/jira/sincronizar[?completa=1]` | dispara a sincronização e responde `202` na hora (some `?esperar=1` para bloquear até o fim) |
+| `GET /api/jira/sincronizar/estado` | progresso da passada: origem atual, `indice/total`, issues lidas, resultado |
 | `DELETE /api/jira/sincronizacoes/:origem` | remove uma origem e seus itens |
 | `GET /api/importacoes` | histórico de planilhas |
 | `POST /api/upload?nome=arq.xlsx` | corpo = binário do arquivo |

@@ -72,14 +72,103 @@ async function corpoJson(req) {
 
 // ------------------------------------------------------------ sincronizacao
 
-// uma sincronizacao por vez: o botao da tela e o agendador compartilham a mesma
+// Uma sincronizacao por vez — o botao da tela, a API e o agendador compartilham
+// a mesma execucao. Ela roda em segundo plano e o progresso fica aqui: com
+// dezenas de projetos a passada leva minutos, tempo demais para manter uma
+// requisicao HTTP aberta esperando o fim.
 let emAndamento = null;
 
-function sincronizarUmaVez(opcoes = {}) {
-  if (!emAndamento) {
-    emAndamento = sincronizar(opcoes).finally(() => { emAndamento = null; });
+const estadoInicial = () => ({
+  rodando: false,
+  completa: false,
+  fase: 'parada',
+  iniciadoEm: null,
+  terminadoEm: null,
+  total: 0,
+  indice: 0,
+  origem: null,
+  lidas: 0,
+  gravados: 0,
+  origens: [],
+  concluidas: [],
+  resultado: null,
+  erro: null,
+});
+
+let estadoSync = estadoInicial();
+
+/** Traduz os eventos de `sincronizar` no estado que a tela consulta. */
+function aplicarProgresso(p) {
+  if (p.fase === 'inicio') {
+    estadoSync.total = p.total;
+    estadoSync.origens = p.origens;
+    console.log(`[jira] sincronizando ${p.total} origem(ns), uma por vez: ${p.origens.join(', ')}`);
+    return;
   }
-  return emAndamento;
+
+  estadoSync.fase = p.fase;
+  if (p.origem) estadoSync.origem = p.origem;
+  if (p.indice) estadoSync.indice = p.indice;
+
+  if (p.fase === 'consultando') {
+    estadoSync.lidas = 0;
+    estadoSync.gravados = 0;
+    return;
+  }
+  if (p.fase === 'lendo') {
+    estadoSync.lidas = p.lidas ?? 0;
+    estadoSync.gravados = p.gravados ?? 0;
+    return;
+  }
+  if (p.fase === 'concluida') {
+    estadoSync.concluidas.push({
+      origem: p.origem, ok: true, itens: p.itens, novos: p.novos,
+      atualizados: p.atualizados, removidos: p.removidos, truncado: p.truncado,
+    });
+    console.log(
+      `[jira] ${p.indice}/${p.total} ${p.origem}: ${p.lidas} lidas -> ${p.novos} novas, `
+      + `${p.atualizados} atualizadas${p.removidos ? `, ${p.removidos} removidas` : ''}`
+      + `${p.avisos?.length ? ` (${p.avisos.join('; ')})` : ''}`,
+    );
+    return;
+  }
+  if (p.fase === 'erro') {
+    estadoSync.concluidas.push({ origem: p.origem, ok: false, erro: p.erro });
+    console.error(`[jira] ${p.indice}/${p.total} ${p.origem}: ${p.erro}`);
+  }
+}
+
+async function executarSincronizacao(opcoes) {
+  try {
+    const r = await sincronizar({ ...opcoes, aoProgredir: aplicarProgresso });
+    estadoSync.resultado = r;
+    estadoSync.fase = 'finalizada';
+    console.log(
+      `[jira] passada concluída em ${(r.duracaoMs / 1000).toFixed(1)}s: ${r.novos} novas, `
+      + `${r.atualizados} atualizadas${r.removidos ? `, ${r.removidos} removidas` : ''}`
+      + `${r.falhas ? ` — ${r.falhas} origem(ns) com erro` : ''}`,
+    );
+    return r;
+  } catch (e) {
+    estadoSync.erro = e.message;
+    estadoSync.fase = 'falhou';
+    console.error(`[jira] falha na sincronização: ${e.message}`);
+    return null;
+  } finally {
+    estadoSync.rodando = false;
+    estadoSync.terminadoEm = new Date().toISOString();
+    emAndamento = null;
+  }
+}
+
+/** Dispara a sincronizacao se nao houver outra rodando. Nunca bloqueia. */
+function iniciarSincronizacao(opcoes = {}) {
+  if (emAndamento) {
+    return { iniciada: false, motivo: 'Já existe uma sincronização em andamento.', estado: estadoSync };
+  }
+  estadoSync = { ...estadoInicial(), rodando: true, completa: !!opcoes.completa, fase: 'iniciando', iniciadoEm: new Date().toISOString() };
+  emAndamento = executarSincronizacao(opcoes);
+  return { iniciada: true, estado: estadoSync };
 }
 
 function agendarSincronizacao() {
@@ -87,17 +176,10 @@ function agendarSincronizacao() {
   if (!cfg.configurado || !cfg.intervaloMinutos) return;
 
   const intervalo = Math.max(cfg.intervaloMinutos, 1) * 60000;
-  const rodar = async () => {
-    try {
-      const r = await sincronizarUmaVez();
-      const falhas = r.origens.filter((o) => !o.ok);
-      console.log(
-        `[jira] sincronizado: ${r.novos} novas, ${r.atualizados} atualizadas`
-        + `${r.removidos ? `, ${r.removidos} removidas` : ''}`
-        + `${falhas.length ? ` — ${falhas.length} origem(ns) com erro: ${falhas.map((f) => f.erro).join(' | ')}` : ''}`,
-      );
-    } catch (e) {
-      console.error(`[jira] falha na sincronização automática: ${e.message}`);
+  const rodar = () => {
+    const r = iniciarSincronizacao();
+    if (!r.iniciada) {
+      console.log(`[jira] passada anterior ainda em andamento (${estadoSync.indice}/${estadoSync.total}); pulando esta rodada.`);
     }
   };
 
@@ -195,13 +277,28 @@ const servidor = createServer(async (req, res) => {
       }
     }
 
+    // progresso da passada em andamento (a tela consulta de segundo em segundo)
+    if (rota === '/api/jira/sincronizar/estado' && req.method === 'GET') {
+      return json(res, 200, estadoSync);
+    }
+
     if (rota === '/api/jira/sincronizar' && req.method === 'POST') {
       const completa = url.searchParams.get('completa') === '1';
-      try {
-        return json(res, 200, await sincronizarUmaVez({ completa }));
-      } catch (e) {
-        return json(res, 502, { erro: e.message });
+      const cfg = lerConfig();
+      if (!cfg.configurado) {
+        return json(res, 400, {
+          erro: 'Jira não configurado: faltam a URL do site e/ou o token da API.',
+        });
       }
+
+      const inicio = iniciarSincronizacao({ completa });
+      // ?esperar=1 devolve o resultado completo (util em scripts e no curl);
+      // sem ele a resposta sai na hora e o cliente acompanha pelo /estado
+      if (url.searchParams.get('esperar') === '1') {
+        const r = emAndamento ? await emAndamento : estadoSync.resultado;
+        return r ? json(res, 200, r) : json(res, 502, { erro: estadoSync.erro ?? 'falha na sincronização' });
+      }
+      return json(res, inicio.iniciada ? 202 : 200, inicio);
     }
 
     if (rota.startsWith('/api/jira/sincronizacoes/') && req.method === 'DELETE') {

@@ -518,25 +518,78 @@ function alternarProjeto(chave, botao) {
   botao.classList.toggle('ativo', i < 0);
 }
 
+const espera = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Uma linha de resumo por origem sincronizada. */
+function resumoDasOrigens(origens = []) {
+  return origens
+    .map((o) => (o.ok
+      ? `${o.origem}: ${num(o.itens)} lidas (${num(o.novos)} novas, ${num(o.atualizados)} atualizadas${o.removidos ? `, ${num(o.removidos)} removidas` : ''})`
+      : `${o.origem}: ERRO — ${o.erro}`))
+    .join(' · ');
+}
+
+/**
+ * Acompanha a passada que esta rodando no servidor.
+ * A sincronizacao vai projeto por projeto e pode levar minutos, entao a tela
+ * consulta o progresso em vez de esperar uma resposta HTTP demorada.
+ */
+async function acompanharSincronizacao({ li, botao } = {}) {
+  let ultimoIndice = 0;
+
+  for (;;) {
+    const e = await fetch('/api/jira/sincronizar/estado').then((x) => x.json());
+
+    if (li) {
+      const onde = e.total ? `Projeto ${e.indice}/${e.total}` : 'Preparando';
+      const alvo = e.origem ? ` — ${e.origem}` : '';
+      const lidas = e.fase === 'lendo' ? `: ${num(e.lidas)} issues lidas` : '';
+      li.textContent = e.rodando ? `${onde}${alvo}${lidas}…` : 'Finalizando…';
+    }
+    if (botao && e.total) botao.textContent = `Sincronizando ${e.indice}/${e.total}…`;
+
+    // cada projeto que termina ja aparece nos gráficos
+    if (e.indice > ultimoIndice) {
+      ultimoIndice = e.indice;
+      if (ultimoIndice > 1) carregar().catch(() => {});
+    }
+
+    if (!e.rodando) return e;
+    await espera(1000);
+  }
+}
+
 async function sincronizarAgora({ completa = false } = {}) {
   const botao = $('#btn-sincronizar');
-  const rotuloAnterior = botao.textContent;
+  const rotuloAnterior = '⟳ Sincronizar Jira';
   botao.disabled = true;
   botao.textContent = completa ? 'Sincronizando tudo…' : 'Sincronizando…';
   const li = logJira(completa ? 'Sincronização completa em andamento…' : 'Sincronizando…');
 
   try {
-    const r = await fetch(`/api/jira/sincronizar${completa ? '?completa=1' : ''}`, { method: 'POST' })
+    const inicio = await fetch(`/api/jira/sincronizar${completa ? '?completa=1' : ''}`, { method: 'POST' })
       .then((x) => x.json());
-    if (r.erro) throw new Error(r.erro);
+    if (inicio.erro) throw new Error(inicio.erro);
+    if (!inicio.iniciada) logJira(inicio.motivo || 'Acompanhando a sincronização em andamento.', 'aviso');
 
-    const resumo = r.origens
-      .map((o) => (o.ok
-        ? `${o.origem}: ${o.itens} lidas (${o.novos} novas, ${o.atualizados} atualizadas${o.removidos ? `, ${o.removidos} removidas` : ''})`
-        : `${o.origem}: ERRO — ${o.erro}`))
-      .join(' · ');
-    li.className = r.falhas ? 'aviso' : '';
-    li.textContent = `${resumo} — em ${(r.duracaoMs / 1000).toFixed(1)}s`;
+    const estado = await acompanharSincronizacao({ li, botao });
+    if (estado.erro) throw new Error(estado.erro);
+
+    const r = estado.resultado;
+    if (!r) {
+      li.textContent = 'Sincronização encerrada sem resultado.';
+      li.className = 'aviso';
+    } else {
+      li.className = r.falhas ? 'aviso' : '';
+      li.textContent = `${resumoDasOrigens(r.origens)} — em ${(r.duracaoMs / 1000).toFixed(1)}s`;
+      if (r.truncadas) {
+        logJira(
+          `${r.truncadas} origem(ns) atingiram o limite de issues por passada; `
+          + 'o restante entra na próxima sincronização.',
+          'aviso',
+        );
+      }
+    }
   } catch (e) {
     li.className = 'erro';
     li.textContent = e.message;
@@ -545,6 +598,26 @@ async function sincronizarAgora({ completa = false } = {}) {
     botao.textContent = rotuloAnterior;
     await carregar();
     await carregarConfigJira();
+  }
+}
+
+let vigiando = false;
+
+/** Se o agendador estiver sincronizando, mostra isso no cabeçalho. */
+async function vigiarSincronizacaoDeFundo() {
+  if (vigiando) return;
+  vigiando = true;
+  try {
+    const e = await fetch('/api/jira/sincronizar/estado').then((x) => x.json());
+    if (!e.rodando) return;
+    const etiqueta = $('#status-jira');
+    etiqueta.className = 'etiqueta';
+    etiqueta.textContent = `sincronizando ${e.indice}/${e.total}…`;
+    await acompanharSincronizacao({});
+    await carregar();
+    await carregarConfigJira();
+  } catch { /* servidor reiniciando: a próxima checagem resolve */ } finally {
+    vigiando = false;
   }
 }
 
@@ -652,6 +725,9 @@ function iniciar() {
 
   carregar();
   carregarConfigJira();
+  // a sincronização automática roda no servidor; a tela só se pendura nela
+  vigiarSincronizacaoDeFundo();
+  setInterval(vigiarSincronizacaoDeFundo, 30000);
 }
 
 iniciar();

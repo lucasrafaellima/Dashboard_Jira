@@ -235,6 +235,13 @@ export function removerSincronizacao(origem) {
   return { origem, itensRemovidos: Number(r.changes ?? 0) };
 }
 
+/** Quantos itens da base vieram de uma origem sincronizada. */
+export function contarItensDaOrigem(origem) {
+  return conectar()
+    .prepare('SELECT COUNT(*) AS n FROM itens WHERE arquivo_origem = ?')
+    .get(origemJira(origem)).n;
+}
+
 /**
  * Apaga os itens de uma origem que nao vieram na lista de chaves — usado na
  * sincronizacao completa, para refletir issues excluidas ou movidas no Jira.

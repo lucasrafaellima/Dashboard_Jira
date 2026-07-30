@@ -27,7 +27,10 @@ const PADRAO = {
   projetos: [],
   jql: '',
   intervaloMinutos: 0,
+  // limite de issues por projeto em cada passada; o que sobrar vem na proxima
   maxIssues: 20000,
+  // pausa entre um projeto e o proximo, para nao esbarrar no limite do Jira
+  pausaMs: 400,
 };
 
 function lerArquivo() {
@@ -70,6 +73,7 @@ export function lerConfig() {
     jql: String(env.JIRA_JQL || arq.jql || PADRAO.jql).trim(),
     intervaloMinutos: inteiro(env.JIRA_INTERVALO_MIN ?? arq.intervaloMinutos, PADRAO.intervaloMinutos),
     maxIssues: inteiro(env.JIRA_MAX_ISSUES ?? arq.maxIssues, PADRAO.maxIssues) || PADRAO.maxIssues,
+    pausaMs: inteiro(env.JIRA_PAUSA_MS ?? arq.pausaMs, PADRAO.pausaMs),
   };
   cfg.configurado = Boolean(cfg.url && cfg.token);
   // de onde veio cada valor — ajuda a explicar por que a tela nao consegue editar
@@ -112,6 +116,7 @@ export function salvarConfig(parcial = {}) {
   if (parcial.jql != null) novo.jql = String(parcial.jql).trim();
   if (parcial.intervaloMinutos != null) novo.intervaloMinutos = inteiro(parcial.intervaloMinutos, 0);
   if (parcial.maxIssues != null) novo.maxIssues = inteiro(parcial.maxIssues, PADRAO.maxIssues);
+  if (parcial.pausaMs != null) novo.pausaMs = inteiro(parcial.pausaMs, PADRAO.pausaMs);
 
   mkdirSync(dirname(ARQUIVO_CONFIG), { recursive: true });
   writeFileSync(ARQUIVO_CONFIG, `${JSON.stringify(novo, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
