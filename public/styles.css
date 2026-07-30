@@ -87,6 +87,16 @@ input[type="date"] {
 }
 .cartao h2 .sub { font-weight: 400; font-size: 11.5px; color: var(--suave); }
 
+/* botao alinhado a direita dentro do titulo de um cartao */
+.btn.btn-no-titulo {
+  margin-left: auto; align-self: center;
+  padding: 5px 11px; font-size: 12px;
+  background: var(--azul-claro); color: var(--azul-escuro);
+  border: 1px solid var(--borda);
+}
+.btn.btn-no-titulo:hover { background: #d8e6f7; }
+.btn.btn-no-titulo:disabled { opacity: .6; cursor: progress; }
+
 /* ------------------------------------------------------------ slicers */
 
 .slicer { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; max-height: 260px; overflow: auto; }

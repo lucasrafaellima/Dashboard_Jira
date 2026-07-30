@@ -362,6 +362,43 @@ function renderizar(d, detalhe) {
     .join('') || '<tr><td colspan="7">Nenhuma planilha importada ainda.</td></tr>';
 }
 
+// ------------------------------------------------------------ exportar Excel
+
+/**
+ * Baixa a tabela de atividades em .xlsx respeitando os filtros da tela.
+ * A tela mostra no maximo 500 linhas; a planilha leva tudo o que o filtro pegou.
+ */
+async function exportarExcel() {
+  const botao = $('#btn-excel');
+  const rotulo = botao.textContent;
+  botao.disabled = true;
+  botao.textContent = 'Gerando…';
+
+  try {
+    const r = await fetch(`/api/exportar?${queryFiltros()}`);
+    if (!r.ok) {
+      const erro = await r.json().catch(() => ({}));
+      throw new Error(erro.erro || `falha ao gerar a planilha (HTTP ${r.status})`);
+    }
+    const blob = await r.blob();
+    const nome = (r.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/)?.[1]
+      || 'atividades-jira.xlsx';
+
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = nome;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+  } catch (e) {
+    alert(`Não foi possível exportar: ${e.message}`);
+  } finally {
+    botao.disabled = false;
+    botao.textContent = rotulo;
+  }
+}
+
 // ------------------------------------------------------------ upload
 
 async function enviarArquivos(lista) {
@@ -663,6 +700,7 @@ function iniciar() {
   });
 
   $('#btn-pdf').addEventListener('click', () => window.print());
+  $('#btn-excel').addEventListener('click', exportarExcel);
 
   const modal = $('#modal');
   $('#btn-importar').addEventListener('click', () => modal.classList.remove('oculto'));

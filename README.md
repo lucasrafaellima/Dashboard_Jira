@@ -200,6 +200,11 @@ sem precisar de uma sincronização completa.
 - **KPIs**: atividades criadas, concluídas e taxa de conclusão.
 - **Extras**: evolução mensal (criadas × concluídas), por tipo, por prioridade, tempo médio/mediano até concluir, itens sem responsável, itens com data limite vencida, e a tabela detalhada.
 - Botão **PDF** usa a impressão do navegador (gráficos e cartões saem, tabelas e controles não).
+- Botão **⤓ Excel**, no título da tabela **Atividades**, baixa um `.xlsx` com as mesmas
+  colunas da tela. Ele respeita os filtros ativos (espaços, responsáveis, período,
+  cancelados): com filtro, só vem o que está filtrado. A tela mostra no máximo 500 linhas,
+  mas a planilha leva **todas** as atividades do filtro. Datas saem como data de verdade
+  (ordenável no Excel), com a primeira linha congelada e autofiltro ligado.
 
 ### O que conta como concluída
 
@@ -222,6 +227,7 @@ src/config.js          lê .env e config/jira.json (credenciais do Jira)
 src/jira.js            cliente REST do Jira: auth, paginação, erros
 src/sincronizacao.js   issue da API -> registro do banco; incremental e completa
 src/xlsx.js            leitor .xlsx: zip na mão + inflate + XML das abas
+src/xlsx-escrita.js    escritor .xlsx: XML da pasta de trabalho + zip com deflate
 src/normalizar.js      mapeamento de colunas, datas, status, espaços, pessoas
 src/ingestao.js        escolhe a aba, converte as linhas e grava
 src/banco.js           node:sqlite — tabelas itens, importacoes e sincronizacoes
@@ -241,6 +247,7 @@ docs/                  guia de configuração do Jira
 |---|---|
 | `GET /api/dashboard?espacos=A\|B&responsaveis=X&de=&ate=&amplo=1` | payload completo |
 | `GET /api/itens?...&limite=500` | tabela detalhada |
+| `GET /api/exportar?...` | mesma tabela em `.xlsx`, com os mesmos filtros (sem limite por padrão) |
 | `GET /api/jira/config` | configuração atual (token mascarado) + estado das sincronizações |
 | `POST /api/jira/config` | salva a configuração em `config/jira.json` |
 | `POST /api/jira/testar` | testa credenciais (aceita URL/e-mail/token no corpo) |

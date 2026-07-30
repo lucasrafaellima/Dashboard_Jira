@@ -12,6 +12,7 @@ import { montarDashboard, listarDetalhe } from './src/metricas.js';
 import { lerConfig, configPublica, salvarConfig } from './src/config.js';
 import { verificarConexao, listarProjetos } from './src/jira.js';
 import { sincronizar } from './src/sincronizacao.js';
+import { gerarXlsx } from './src/xlsx-escrita.js';
 
 const RAIZ = dirname(fileURLToPath(import.meta.url));
 const PUBLICO = join(RAIZ, 'public');
@@ -225,6 +226,19 @@ function lerFiltros(url) {
   };
 }
 
+// Colunas da planilha exportada — as mesmas da tabela "Atividades" na tela.
+const COLUNAS_EXPORTACAO = [
+  { titulo: 'Chave', chave: 'chave', largura: 14 },
+  { titulo: 'Tipo', chave: 'tipo_item', largura: 16 },
+  { titulo: 'Resumo', chave: 'resumo', largura: 60 },
+  { titulo: 'Responsável', chave: 'responsavel', largura: 24 },
+  { titulo: 'Status', chave: 'status', largura: 16 },
+  { titulo: 'Prioridade', chave: 'prioridade', largura: 14 },
+  { titulo: 'Espaço', chave: 'espaco', largura: 24 },
+  { titulo: 'Criado', chave: 'criado', tipo: 'data', largura: 18 },
+  { titulo: 'Atualizado', chave: 'atualizado', tipo: 'data', largura: 18 },
+];
+
 const servidor = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const rota = url.pathname;
@@ -237,6 +251,26 @@ const servidor = createServer(async (req, res) => {
     if (rota === '/api/itens' && req.method === 'GET') {
       const limite = Math.min(Number(url.searchParams.get('limite')) || 500, 5000);
       return json(res, 200, listarDetalhe(lerFiltros(url), limite));
+    }
+
+    // mesma tabela de "Atividades" da tela, em .xlsx e com os mesmos filtros
+    if (rota === '/api/exportar' && req.method === 'GET') {
+      const filtros = lerFiltros(url);
+      // sem limite por padrao: a tela mostra as 500 primeiras, a planilha leva
+      // tudo o que o filtro selecionou
+      const limite = Math.min(Number(url.searchParams.get('limite')) || Infinity, 200000);
+      const { itens, total } = listarDetalhe(filtros, limite);
+
+      const planilha = gerarXlsx({ aba: 'Atividades', colunas: COLUNAS_EXPORTACAO, linhas: itens });
+      const nome = `atividades-jira-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      res.writeHead(200, {
+        'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'Content-Disposition': `attachment; filename="${nome}"`,
+        'Content-Length': planilha.length,
+        'X-Total-Filtrado': String(total),
+        'Cache-Control': 'no-store',
+      });
+      return res.end(planilha);
     }
 
     if (rota === '/api/importacoes' && req.method === 'GET') {
