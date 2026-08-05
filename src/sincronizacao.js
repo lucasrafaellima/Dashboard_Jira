@@ -5,11 +5,14 @@
 // configurado). Para cada origem guardamos a marca d'agua do maior "Atualizado"
 // ja visto: a sincronizacao seguinte pede so o que mudou desde entao.
 import { lerConfig } from './config.js';
-import { paginasDeIssues, escaparJql, listarProjetos, verificarConexao } from './jira.js';
+import {
+  paginasDeIssues, escaparJql, listarProjetos, verificarConexao, exigirAutenticacao,
+  listarChaves,
+} from './jira.js';
 import { normalizarLinha, espacoDoProjeto } from './normalizar.js';
 import {
   gravarItens, lerSincronizacao, listarSincronizacoes, contarItensDaOrigem,
-  registrarSincronizacao, removerAusentes, origemJira,
+  registrarSincronizacao, removerAusentes, origemJira, resolverEpicos,
 } from './banco.js';
 
 /** Folga aplicada a marca d'agua, para cobrir diferenca de fuso/relogio. */
@@ -106,6 +109,20 @@ export function registroDaIssue(issue) {
   const f = issue?.fields ?? {};
   const projeto = f.project ?? {};
   const status = String(f.status?.name ?? '').trim() || 'Sem status';
+  // o Jira devolve o pai ja resumido dentro da propria issue (chave, tipo e
+  // titulo) — e por ele que o ticket chega ao epico do espaco
+  const pai = f.parent ?? null;
+
+  // Quando o item foi concluido, na melhor fonte disponivel:
+  //   1. resolutiondate — a data oficial da resolucao;
+  //   2. statuscategorychangedate — quando ele entrou na categoria "done", para
+  //      os workflows que fecham sem resolucao nenhuma (ex.: "FECHADO" no
+  //      Suporte). So vale se ele estiver encerrado agora: em item aberto esse
+  //      campo marca a entrada em "em andamento".
+  // Se nenhuma existir, normalizarLinha deixa vazio e o dashboard cai no
+  // "Atualizado(a)" — o proxy antigo, agora so como ultimo recurso.
+  const encerrado = f.status?.statusCategory?.key === 'done';
+  const concluidoEm = f.resolutiondate || (encerrado ? f.statuscategorychangedate : null);
 
   const registro = normalizarLinha({
     tipo_item: f.issuetype?.name,
@@ -123,9 +140,13 @@ export function registroDaIssue(issue) {
     resolucao: f.resolution?.name,
     criado: f.created,
     atualizado: f.updated,
+    concluido_em: concluidoEm,
     data_limite: f.duedate,
     projeto: projeto.name,
     origem: projeto.key,
+    pai: pai?.key,
+    pai_tipo: pai?.fields?.issuetype?.name,
+    pai_resumo: pai?.fields?.summary,
   });
   if (!registro) return null;
 
@@ -134,6 +155,56 @@ export function registroDaIssue(issue) {
 }
 
 // ------------------------------------------------------------ execucao
+
+/**
+ * Tira da base o que nao existe mais no Jira.
+ *
+ * Roda em **toda** sincronizacao, nao so na completa. A passada incremental
+ * pede apenas `updated >= marca d'agua`, e uma issue excluida nao aparece em
+ * resposta nenhuma — sem perguntar quem ainda esta la, "apagada" e
+ * indistinguivel de "nao mudou", e o ticket ficava para sempre na base.
+ *
+ * A pergunta e uma consulta enxuta, so de chaves (ver `listarChaves`).
+ *
+ * Tres situacoes em que **nada** e removido, porque apagariam dado bom:
+ *   * a listagem falhou — sem lista, todo mundo pareceria ausente;
+ *   * a listagem bateu no teto — o que ficou de fora nao esta excluido;
+ *   * veio vazia com a base cheia — mais provavel ter perdido acesso ao
+ *     projeto do que alguem ter apagado todas as issues de uma vez.
+ *
+ * @returns {Promise<{removidos:number, avisos:string[]}>}
+ */
+async function removerExcluidas(cfg, alvo) {
+  const avisos = [];
+  // sem o recorte incremental: aqui interessa quem existe agora, nao quem mudou
+  const jql = montarJql(alvo.base, null);
+
+  let listagem;
+  try {
+    listagem = await listarChaves(cfg, jql);
+  } catch (e) {
+    return { removidos: 0, avisos: [`não consegui conferir o que foi excluído (${e.message})`] };
+  }
+
+  if (listagem.truncado) {
+    return {
+      removidos: 0,
+      avisos: ['a lista de issues do Jira não coube no teto de leitura; '
+        + 'nada foi removido para não apagar o que só não foi listado'],
+    };
+  }
+
+  const naBase = contarItensDaOrigem(alvo.origem);
+  if (!listagem.chaves.length && naBase > 0) {
+    return {
+      removidos: 0,
+      avisos: [`o Jira não devolveu nenhuma issue, mas a base tem ${naBase} item(ns) desta origem — `
+        + 'nada foi removido; confira o acesso da conta a este projeto'],
+    };
+  }
+
+  return { removidos: removerAusentes(alvo.origem, listagem.chaves), avisos };
+}
 
 /**
  * Sincroniza uma origem (um projeto), pagina a pagina.
@@ -159,9 +230,6 @@ async function sincronizarOrigem(cfg, alvo, ctx) {
   progresso({ fase: 'consultando', jql });
 
   const conta = { lidas: 0, itens: 0, novos: 0, atualizados: 0, ignorados: 0, paginas: 0 };
-  // na sincronizacao completa guardamos as chaves para saber o que sumiu do
-  // Jira; sao strings curtas, o custo em memoria e desprezivel
-  const chaves = ctx.completa ? [] : null;
   const rotulo = origemJira(origem);
   let marcaAgua = marcaAnterior;
   let truncado = false;
@@ -175,10 +243,7 @@ async function sincronizarOrigem(cfg, alvo, ctx) {
       const registros = [];
       for (const issue of pagina.issues) {
         const r = registroDaIssue(issue);
-        if (r) {
-          registros.push(r);
-          chaves?.push(r.chave);
-        }
+        if (r) registros.push(r);
         const u = instante(issue?.fields?.updated);
         if (u && (!marcaAgua || u > marcaAgua)) marcaAgua = u;
       }
@@ -219,14 +284,10 @@ async function sincronizarOrigem(cfg, alvo, ctx) {
     throw e;
   }
 
-  // So a sincronizacao completa sabe o conjunto inteiro, entao so ela pode
-  // concluir que uma issue sumiu do Jira. Dois casos em que nem ela pode:
-  //   * a leitura foi cortada pelo limite -> apagaria o que apenas nao foi lido
-  //   * veio vazia mas a base tem itens -> mais provavel ser perda de acesso ao
-  //     projeto do que alguem ter apagado todas as issues de uma vez
-  const tinhaItens = ctx.completa ? contarItensDaOrigem(origem) : 0;
-  const suspeita = ctx.completa && !conta.itens && tinhaItens > 0;
-  const removidos = ctx.completa && !truncado && !suspeita ? removerAusentes(origem, chaves) : 0;
+  // toda passada confere o que sumiu do Jira, incremental inclusive
+  progresso({ fase: 'conferindo', jql });
+  const limpeza = await removerExcluidas(cfg, alvo);
+  const removidos = limpeza.removidos;
 
   registrarSincronizacao({
     origem,
@@ -239,17 +300,10 @@ async function sincronizarOrigem(cfg, alvo, ctx) {
     erro: null,
   });
 
-  const avisos = [];
+  const avisos = [...limpeza.avisos];
   if (truncado) {
     avisos.push(
       `limite de ${cfg.maxIssues} issues por passada atingido — o resto vem na próxima sincronização`,
-    );
-    if (ctx.completa) avisos.push('remoção de issues ausentes não executada por causa do limite');
-  }
-  if (suspeita) {
-    avisos.push(
-      `o Jira não devolveu nenhuma issue, mas a base tem ${tinhaItens} item(ns) desta origem — `
-      + 'nada foi removido; confira o acesso da conta a este projeto',
     );
   }
 
@@ -276,6 +330,10 @@ export async function sincronizar(opcoes = {}) {
   }
 
   const inicio = Date.now();
+  // antes de qualquer consulta: token vencido faz o Jira responder 200 com
+  // lista vazia, e a passada inteira "daria certo" sem trazer nada
+  await exigirAutenticacao(cfg);
+
   const origens = opcoes.origens ?? await resolverOrigens(cfg);
   const total = origens.length;
   const pausa = opcoes.pausaMs ?? cfg.pausaMs ?? PAUSA_ORIGENS_MS;
@@ -317,11 +375,22 @@ export async function sincronizar(opcoes = {}) {
     if (i + 1 < total) await pausar(pausa);
   }
 
+  // com tudo gravado, sobe a cadeia de pais e carimba o epico de cada ticket.
+  // So aqui da para fazer isso: o pai de uma issue pode ter vindo em outra
+  // pagina, em outro projeto, ou ate numa passada anterior.
+  let epicosResolvidos = 0;
+  try {
+    epicosResolvidos = resolverEpicos();
+  } catch (e) {
+    opcoes.aoProgredir?.({ fase: 'aviso', erro: `não consegui resolver os épicos: ${e.message}` });
+  }
+
   const somar = (campo) => resultados.reduce((s, r) => s + (r[campo] ?? 0), 0);
   return {
     completa: !!opcoes.completa,
     duracaoMs: Date.now() - inicio,
     origens: resultados,
+    epicosResolvidos,
     novos: somar('novos'),
     atualizados: somar('atualizados'),
     removidos: somar('removidos'),
@@ -333,4 +402,4 @@ export async function sincronizar(opcoes = {}) {
   };
 }
 
-export { listarSincronizacoes, listarProjetos, verificarConexao };
+export { listarSincronizacoes, listarProjetos, verificarConexao, resolverEpicos };

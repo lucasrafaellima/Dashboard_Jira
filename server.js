@@ -116,6 +116,7 @@ function aplicarProgresso(p) {
     estadoSync.gravados = 0;
     return;
   }
+  if (p.fase === 'conferindo') return;
   if (p.fase === 'lendo') {
     estadoSync.lidas = p.lidas ?? 0;
     estadoSync.gravados = p.gravados ?? 0;
@@ -217,9 +218,11 @@ function lerFiltros(url) {
   };
   return {
     espacos: lista('espacos'),
+    epicos: lista('epicos'),
     responsaveis: lista('responsaveis'),
     tipos: lista('tipos'),
     status: lista('status'),
+    prioridades: lista('prioridades'),
     de: data('de'),
     ate: data('ate'),
     incluirCancelados: url.searchParams.get('cancelados') === '1',
@@ -235,7 +238,10 @@ const COLUNAS_EXPORTACAO = [
   { titulo: 'Status', chave: 'status', largura: 16 },
   { titulo: 'Prioridade', chave: 'prioridade', largura: 14 },
   { titulo: 'Espaço', chave: 'espaco', largura: 24 },
+  { titulo: 'Épico', chave: 'epico_rotulo', largura: 34 },
+  { titulo: 'Pai', chave: 'pai', largura: 14 },
   { titulo: 'Criado', chave: 'criado', tipo: 'data', largura: 18 },
+  { titulo: 'Concluído em', chave: 'concluido', tipo: 'data', largura: 18 },
   { titulo: 'Atualizado', chave: 'atualizado', tipo: 'data', largura: 18 },
 ];
 

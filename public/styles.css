@@ -63,10 +63,10 @@ input[type="date"] {
 
 .painel { padding: 16px; display: grid; gap: 14px; max-width: 1600px; margin: 0 auto; }
 .linha { display: grid; gap: 14px; }
-.linha-1 { grid-template-columns: 200px 220px 1fr; }
+.linha-1 { grid-template-columns: 190px 230px 200px 1fr; }
 .linha-2 { grid-template-columns: 1fr 1fr 190px; }
 .linha-3 { grid-template-columns: 2fr 1fr; }
-.linha-4 { grid-template-columns: 1fr 1fr; }
+.linha-4 { grid-template-columns: 1fr 1fr 1fr; }
 
 @media (max-width: 1150px) {
   .linha-1, .linha-2, .linha-3, .linha-4 { grid-template-columns: 1fr; }
@@ -115,6 +115,13 @@ input[type="date"] {
 .slicer li:hover { background: #cddcf1; }
 .slicer li.ativo { background: var(--azul); color: #fff; border-color: var(--azul-escuro); font-weight: 600; }
 .slicer li .qtd { opacity: .75; font-variant-numeric: tabular-nums; }
+/* o rotulo do epico ("WIK-193 · Julho de 2026") e longo: corta com reticencias */
+.slicer li > span:first-child { overflow: hidden; text-overflow: ellipsis; }
+.slicer li.vazio-slicer {
+  background: none; border-style: dashed; color: var(--suave);
+  cursor: default; justify-content: center;
+}
+.slicer li.vazio-slicer:hover { background: none; }
 
 /* ------------------------------------------------------------ kpis */
 
@@ -141,6 +148,82 @@ input[type="date"] {
 .grade { stroke: #e3eaf3; stroke-width: 1; }
 .legenda { fill: var(--texto); font-size: 10.5px; }
 
+/* ------------------------------------------------- graficos como filtro
+
+   Toda marca com data-dim vira um filtro clicável. Quem está selecionado
+   ganha contorno; havendo seleção, o resto desbota — sem sumir, para
+   continuar dando para trocar de seleção com um clique. */
+
+.marca {
+  cursor: pointer;
+  transition: opacity .18s ease, filter .18s ease, stroke-width .18s ease, fill .18s ease;
+}
+.marca:focus-visible { outline: 2px solid var(--azul-escuro); outline-offset: 1px; }
+
+/* a faixa transparente que aumenta o alvo do clique não pode desbotar nem
+   pintar nada: ela existe só para capturar o ponteiro */
+.marca.area-clique { opacity: 1 !important; }
+
+.marca.apagada { opacity: .28; }
+/* a faixa de clique nunca ganha contorno: desenharia um retângulo por cima */
+rect.marca.ativa:not(.area-clique), path.marca.ativa, circle.marca.ativa {
+  stroke: var(--azul-escuro); stroke-width: 2;
+}
+text.marca.ativa { fill: var(--azul-escuro); font-weight: 700; }
+
+/* --- destaque do cursor -------------------------------------------------
+
+   O realce cobre o grupo inteiro (faixa de clique + barra + rótulo), a mesma
+   área que responde ao clique: passar o mouse em qualquer ponto da linha
+   acende a linha toda, então dá para ver o que vai ser filtrado antes de
+   clicar. */
+
+.grupo-marca:hover rect.marca:not(.area-clique),
+.grupo-marca:hover path.marca,
+.grupo-marca:hover circle.marca { filter: brightness(1.1) saturate(1.3); }
+
+.grupo-marca:hover text.marca { fill: var(--azul-escuro); }
+
+/* o que está desbotado acende parcialmente: mostra que continua clicável */
+.grupo-marca:hover .marca.apagada { opacity: .62; }
+
+/* --- entrada dos gráficos -----------------------------------------------
+
+   Filtrar reescreve o SVG inteiro, então não há elemento antigo para o
+   navegador interpolar — uma transição CSS comum não pegaria nada. A suavidade
+   vem de uma animação de entrada nas marcas novas, escalonada por posição
+   (o atraso sai de atraso() em app.js). */
+
+@keyframes surgir { from { opacity: 0; } to { opacity: 1; } }
+@keyframes crescer-y { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes crescer-x { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+
+.surge { animation: surgir .32s ease both; }
+
+/* as barras crescem a partir da própria base — `fill-box` faz a origem valer
+   sobre a caixa do elemento, não sobre a do SVG inteiro */
+.cresce-y {
+  transform-box: fill-box; transform-origin: 50% 100%;
+  animation: crescer-y .38s cubic-bezier(.2, .8, .3, 1) both;
+}
+.cresce-x {
+  transform-box: fill-box; transform-origin: 0% 50%;
+  animation: crescer-x .38s cubic-bezier(.2, .8, .3, 1) both;
+}
+
+/* enquanto os dados novos não chegam, o painel esmaece de leve — a classe só
+   entra se a resposta demorar (ver carregar() em app.js), para um clique
+   rápido não piscar */
+.painel { transition: opacity .2s ease; }
+.painel.carregando { opacity: .5; }
+
+@media (prefers-reduced-motion: reduce) {
+  .surge, .cresce-y, .cresce-x { animation: none; }
+  .marca, .painel { transition: none; }
+}
+
+.dica-clique { color: var(--suave); font-weight: 400; }
+
 /* ------------------------------------------------------------ listas e tabelas */
 
 .lista-panorama { list-style: none; margin: 0; padding: 0; display: grid; gap: 7px; }
@@ -163,6 +246,7 @@ thead th {
 tbody td { padding: 6px 9px; border-bottom: 1px solid #eef2f7; vertical-align: top; }
 tbody tr:hover { background: #f6f9fd; }
 td.resumo { max-width: 380px; }
+td.epico { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pilula {
   display: inline-block; padding: 1px 8px; border-radius: 20px;
   font-size: 11px; font-weight: 600; white-space: nowrap;
@@ -317,12 +401,14 @@ td.resumo { max-width: 380px; }
   #card-panorama           { grid-column: span 2; order: 3; }
   #card-espacos-lista      { grid-column: span 3; order: 4; }
   #card-responsaveis-lista { grid-column: span 3; order: 5; }
-  #card-mensal             { grid-column: span 6; order: 6; }
-  #card-pizza              { grid-column: span 3; order: 7; }
-  #card-espacos            { grid-column: span 3; order: 8; }
-  #card-tipos              { grid-column: span 3; order: 9; }
-  #card-prioridades        { grid-column: span 3; order: 10; }
-  #secao-padronizacao      { grid-column: span 6; order: 11; }
+  #card-epicos-lista       { grid-column: span 6; order: 6; }
+  #card-mensal             { grid-column: span 6; order: 7; }
+  #card-pizza              { grid-column: span 3; order: 8; }
+  #card-espacos            { grid-column: span 3; order: 9; }
+  #card-tipos              { grid-column: span 3; order: 10; }
+  #card-prioridades        { grid-column: span 3; order: 11; }
+  #card-epicos             { grid-column: span 6; order: 12; }
+  #secao-padronizacao      { grid-column: span 6; order: 13; }
 
   .cartao {
     break-inside: avoid;
@@ -334,6 +420,13 @@ td.resumo { max-width: 380px; }
     border-bottom: 1px solid #eaf0f7;
   }
   .cartao h2 .sub { font-size: 9.5px; }
+  /* "clique para filtrar" não faz sentido no papel */
+  .dica-clique { display: none; }
+  .marca { cursor: default; }
+  /* nada de animação no papel: uma barra pega no meio da entrada sairia
+     encolhida ou invisível no PDF */
+  .surge, .cresce-y, .cresce-x { animation: none !important; transform: none !important; }
+  .painel.carregando { opacity: 1; }
 
   /* ---------------------------------------------------------- KPIs */
 

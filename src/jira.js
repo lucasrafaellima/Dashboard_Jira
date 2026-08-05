@@ -8,9 +8,15 @@
 // endpoint atual do Cloud) e cai automaticamente para /rest/api/2/search
 // (paginacao por startAt) em instalacoes Server/DC ou sites mais antigos.
 
+// `parent` traz a issue pai ja resumida (chave, tipo e titulo) — e o que liga
+// cada ticket ao epico do espaco a que ele pertence.
 const CAMPOS_PADRAO = [
   'summary', 'issuetype', 'assignee', 'reporter', 'priority',
-  'status', 'resolution', 'created', 'updated', 'duedate', 'project',
+  'status', 'resolution', 'resolutiondate', 'created', 'updated', 'duedate',
+  'project', 'parent',
+  // quando o item entrou na categoria atual. Serve de data de conclusao nos
+  // workflows que fecham sem preencher resolucao (o Suporte faz isso).
+  'statuscategorychangedate',
 ];
 
 const PAGINA = 100;
@@ -117,6 +123,31 @@ export async function verificarConexao(cfg) {
   }
 }
 
+/**
+ * Confere que o Jira reconheceu as credenciais.
+ *
+ * Precisa existir porque o Jira Cloud **nao** responde 401 nas consultas: quem
+ * chega com token invalido ou vencido e atendido como visitante anonimo e
+ * recebe 200 com lista vazia. Sem essa checagem, um token expirado aparece no
+ * dashboard como "nenhum projeto visivel" e "nenhuma issue nova" — o sistema
+ * parece funcionando enquanto deixa de trazer dados.
+ */
+export async function exigirAutenticacao(cfg) {
+  try {
+    return await verificarConexao(cfg);
+  } catch (e) {
+    if (e.status === 401 || e.status === 403) {
+      throw new ErroJira(
+        'O Jira atendeu a requisição como visitante anônimo — o token da API não vale mais para esta conta. '
+        + 'Gere outro em https://id.atlassian.com/manage-profile/security/api-tokens e salve em "Configurar Jira" '
+        + `(ou no arquivo .env). Resposta do Jira: ${e.message}`,
+        e.status,
+      );
+    }
+    throw e;
+  }
+}
+
 /** Projetos visiveis para a conta configurada. */
 export async function listarProjetos(cfg) {
   const projetos = [];
@@ -134,22 +165,25 @@ export async function listarProjetos(cfg) {
     const lista = await requisitar(cfg, '/rest/api/2/project');
     for (const v of lista ?? []) projetos.push({ chave: v.key, nome: v.name });
   }
+  // lista vazia e ambigua: ou a conta perdeu acesso a tudo, ou o token morreu e
+  // o Jira respondeu como se fosse um visitante. Sai daqui com a resposta certa.
+  if (!projetos.length) await exigirAutenticacao(cfg);
   return projetos.sort((a, b) => a.chave.localeCompare(b.chave));
 }
 
 // ------------------------------------------------------------ busca de issues
 
-async function paginaNova(cfg, jql, campos, token) {
+async function paginaNova(cfg, jql, campos, token, tamanho) {
   return requisitar(cfg, '/rest/api/3/search/jql', {
     metodo: 'POST',
-    corpo: { jql, fields: campos, maxResults: PAGINA, ...(token ? { nextPageToken: token } : {}) },
+    corpo: { jql, fields: campos, maxResults: tamanho, ...(token ? { nextPageToken: token } : {}) },
   });
 }
 
-async function paginaLegada(cfg, jql, campos, inicio) {
+async function paginaLegada(cfg, jql, campos, inicio, tamanho) {
   return requisitar(cfg, '/rest/api/2/search', {
     metodo: 'POST',
-    corpo: { jql, fields: campos, maxResults: PAGINA, startAt: inicio },
+    corpo: { jql, fields: campos, maxResults: tamanho, startAt: inicio },
   });
 }
 
@@ -162,12 +196,13 @@ async function paginaLegada(cfg, jql, campos, inicio) {
  *
  * @param {object} cfg configuracao (url, email, token, maxIssues)
  * @param {string} jql consulta
- * @param {{campos?:string[], limite?:number}} opcoes
+ * @param {{campos?:string[], limite?:number, pagina?:number}} opcoes
  * @yields {{issues:object[], lidas:number, pagina:number, ultima:boolean, truncado:boolean, total:number|null}}
  */
 export async function* paginasDeIssues(cfg, jql, opcoes = {}) {
   const campos = opcoes.campos ?? CAMPOS_PADRAO;
   const limite = opcoes.limite ?? cfg.maxIssues ?? 20000;
+  const tamanho = opcoes.pagina ?? PAGINA;
 
   let modo = dialeto.get(cfg.url) ?? null;
   let token = null;
@@ -178,10 +213,10 @@ export async function* paginasDeIssues(cfg, jql, opcoes = {}) {
   for (;;) {
     let resposta;
     if (modo === 'legado') {
-      resposta = await paginaLegada(cfg, jql, campos, inicio);
+      resposta = await paginaLegada(cfg, jql, campos, inicio, tamanho);
     } else {
       try {
-        resposta = await paginaNova(cfg, jql, campos, token);
+        resposta = await paginaNova(cfg, jql, campos, token, tamanho);
         modo = 'jql';
       } catch (e) {
         // sites Server/DC (e Cloud antigo) nao tem /search/jql
@@ -230,6 +265,48 @@ export async function buscarIssues(cfg, jql, opcoes = {}) {
     opcoes.aoProgredir?.(issues.length);
   }
   return issues;
+}
+
+/** Página da listagem de chaves. O Jira aceita bem mais quando não há campos. */
+const PAGINA_CHAVES = 5000;
+
+/** Teto da listagem de chaves — generoso porque cada chave custa quase nada. */
+const LIMITE_CHAVES = 200000;
+
+/**
+ * Todas as chaves que a consulta devolve **hoje**, sem trazer os dados.
+ *
+ * É o que permite descobrir o que foi excluído no Jira: a sincronização
+ * incremental só pede o que mudou, e uma issue apagada simplesmente não vem em
+ * resposta nenhuma — não há como distinguir "não mudou" de "não existe mais"
+ * sem perguntar quem ainda está lá.
+ *
+ * Sai barato porque pede só `key`: sem resumo, descrição nem comentários, um
+ * projeto de 1.165 issues cabe numa única requisição de ~110 KB.
+ *
+ * Tem de ser `["key"]` mesmo, não `["id"]` nem `[]`: com `["id"]` o Jira
+ * devolve só o id e **omite a chave**, e com `[]` ele ignora o pedido e manda
+ * todos os campos (1 MB a cada 100 issues).
+ *
+ * @returns {Promise<{chaves: string[], truncado: boolean}>} `truncado` avisa
+ *   que o teto foi atingido e a lista está incompleta — quem chama **não pode**
+ *   apagar nada nesse caso, apagaria o que apenas não foi listado.
+ */
+export async function listarChaves(cfg, jql, opcoes = {}) {
+  const chaves = [];
+  let truncado = false;
+  for await (const pagina of paginasDeIssues(cfg, jql, {
+    campos: ['key'],
+    pagina: opcoes.pagina ?? PAGINA_CHAVES,
+    limite: opcoes.limite ?? LIMITE_CHAVES,
+  })) {
+    for (const issue of pagina.issues) {
+      if (issue?.key) chaves.push(String(issue.key).toUpperCase());
+    }
+    if (pagina.truncado) truncado = true;
+    opcoes.aoProgredir?.(chaves.length);
+  }
+  return { chaves, truncado };
 }
 
 /** Escapa um literal para uso dentro de aspas em JQL. */

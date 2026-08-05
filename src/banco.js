@@ -1,6 +1,7 @@
 // Banco embutido (node:sqlite). Uma linha por item do Jira, deduplicado pela
 // "Chave da item" — reimportar planilhas com sobreposicao atualiza, nao duplica.
 import { DatabaseSync } from 'node:sqlite';
+import { ehEpico } from './normalizar.js';
 import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,6 +29,16 @@ function migrar(d) {
     // nas linhas antigas o status gravado ainda e o nome original vindo do Jira
     d.exec('UPDATE itens SET status_origem = status WHERE status_origem IS NULL;');
   }
+  // hierarquia do Jira: pai direto de cada item e o epico no topo da cadeia
+  for (const c of ['pai', 'pai_tipo', 'pai_resumo', 'epico', 'epico_resumo']) {
+    if (!colunas.has(c)) d.exec(`ALTER TABLE itens ADD COLUMN ${c} TEXT;`);
+  }
+  d.exec('CREATE INDEX IF NOT EXISTS idx_itens_epico ON itens(epico);');
+
+  // data em que o Jira registrou a resolucao — e ela que diz em que mes a
+  // atividade foi concluida, nao a data do ultimo toque no item
+  if (!colunas.has('concluido_em')) d.exec('ALTER TABLE itens ADD COLUMN concluido_em TEXT;');
+  d.exec('CREATE INDEX IF NOT EXISTS idx_itens_concluido ON itens(concluido_em);');
 }
 
 function criarEsquema(d) {
@@ -48,15 +59,26 @@ function criarEsquema(d) {
       resolucao        TEXT,
       criado           TEXT,
       atualizado       TEXT,
+      -- quando o Jira resolveu o item; base do "concluídas no mês"
+      concluido_em     TEXT,
       data_limite      TEXT,
       projeto          TEXT,
       origem           TEXT,
       espaco           TEXT,
+      -- hierarquia: "pai" e a issue imediatamente acima; "epico" e o topo da
+      -- cadeia (subtarefa -> historia -> epico), resolvido em resolverEpicos()
+      pai              TEXT,
+      pai_tipo         TEXT,
+      pai_resumo       TEXT,
+      epico            TEXT,
+      epico_resumo     TEXT,
       arquivo_origem   TEXT,
       importado_em     TEXT
     );
 
     CREATE INDEX IF NOT EXISTS idx_itens_espaco      ON itens(espaco);
+    -- o indice de "epico" nasce em migrar(): aqui ele quebraria as bases
+    -- criadas antes da coluna existir, que so ganham a coluna la
     CREATE INDEX IF NOT EXISTS idx_itens_responsavel ON itens(responsavel);
     CREATE INDEX IF NOT EXISTS idx_itens_status      ON itens(status);
     CREATE INDEX IF NOT EXISTS idx_itens_criado      ON itens(criado);
@@ -93,7 +115,8 @@ function criarEsquema(d) {
 const CAMPOS = [
   'chave', 'tipo_item', 'id_item', 'resumo', 'responsavel', 'id_responsavel',
   'relator', 'id_relator', 'prioridade', 'status', 'status_origem', 'status_categoria',
-  'resolucao', 'criado', 'atualizado', 'data_limite', 'projeto', 'origem', 'espaco',
+  'resolucao', 'criado', 'atualizado', 'concluido_em', 'data_limite', 'projeto', 'origem', 'espaco',
+  'pai', 'pai_tipo', 'pai_resumo', 'epico', 'epico_resumo',
   'arquivo_origem', 'importado_em',
 ];
 
@@ -106,12 +129,21 @@ export function gravarItens(registros, arquivoOrigem) {
   const d = conectar();
   const agora = new Date().toISOString();
 
+  // `epico`/`epico_resumo` nao vem prontos da API — quem os calcula e
+  // resolverEpicos(), subindo a cadeia de pais. Uma linha nova chega com eles
+  // vazios, entao aqui o valor ja gravado e preservado; sem isso cada passada
+  // apagaria a hierarquia para o passo seguinte reconstruir.
+  const DERIVADOS = new Set(['epico', 'epico_resumo']);
+  const atribuir = (c) => (DERIVADOS.has(c)
+    ? `${c} = COALESCE(NULLIF(excluded.${c}, ''), itens.${c})`
+    : `${c} = excluded.${c}`);
+
   const existente = d.prepare('SELECT atualizado FROM itens WHERE chave = ?');
   const inserir = d.prepare(`
     INSERT INTO itens (${CAMPOS.join(', ')})
     VALUES (${CAMPOS.map((c) => `$${c}`).join(', ')})
     ON CONFLICT(chave) DO UPDATE SET
-      ${CAMPOS.filter((c) => c !== 'chave').map((c) => `${c} = excluded.${c}`).join(',\n      ')}
+      ${CAMPOS.filter((c) => c !== 'chave').map(atribuir).join(',\n      ')}
     WHERE COALESCE(excluded.atualizado, '') >= COALESCE(itens.atualizado, '')
   `);
 
@@ -139,6 +171,75 @@ export function gravarItens(registros, arquivoOrigem) {
     throw e;
   }
   return { novos, atualizados, ignorados, total: registros.length };
+}
+
+/**
+ * Preenche `epico`/`epico_resumo` de toda a base subindo a cadeia de pais.
+ *
+ * O Jira so entrega o pai imediato de cada issue: uma subtarefa aponta para a
+ * historia, que aponta para o epico. Aqui a cadeia e percorrida ate o topo para
+ * que todo ticket saiba a qual epico do espaco ele pertence. Um epico e o
+ * proprio epico dele, entao filtrar por um epico traz ele e tudo que esta
+ * pendurado nele.
+ *
+ * Roda sobre a base inteira porque um pai pode ter chegado numa passada
+ * anterior (ou por outro projeto) — resolver so o lote recem-lido deixaria
+ * buracos na hierarquia.
+ *
+ * @returns {number} quantos itens tiveram o epico corrigido
+ */
+export function resolverEpicos() {
+  const d = conectar();
+  const linhas = d.prepare(`
+    SELECT chave, tipo_item, resumo, pai, pai_tipo, pai_resumo, epico, epico_resumo FROM itens
+  `).all();
+  const porChave = new Map(linhas.map((l) => [l.chave, l]));
+  const memo = new Map();
+
+  function resolver(chave, profundidade = 0) {
+    if (memo.has(chave)) return memo.get(chave);
+    // marca antes de subir: se a cadeia voltar para ca, o ciclo para aqui
+    memo.set(chave, null);
+
+    const it = porChave.get(chave);
+    let achado = null;
+    if (it && profundidade < 20) {
+      if (ehEpico(it.tipo_item)) {
+        achado = { epico: it.chave, resumo: it.resumo ?? '' };
+      } else if (it.pai) {
+        achado = porChave.has(it.pai)
+          ? resolver(it.pai, profundidade + 1)
+          // pai fora da base (projeto que nao e sincronizado): sobra o que veio
+          // junto com o filho na propria issue
+          : (ehEpico(it.pai_tipo) ? { epico: it.pai, resumo: it.pai_resumo ?? '' } : null);
+      }
+    }
+    memo.set(chave, achado);
+    return achado;
+  }
+
+  const atualizar = d.prepare('UPDATE itens SET epico = ?, epico_resumo = ? WHERE chave = ?');
+  let corrigidos = 0;
+
+  d.exec('BEGIN');
+  try {
+    for (const l of linhas) {
+      const achado = resolver(l.chave);
+      const epico = achado?.epico || null;
+      const resumo = achado?.resumo || null;
+      // "" e NULL dizem a mesma coisa aqui ("sem epico"): comparar normalizado
+      // evita reescrever a base inteira a cada passada
+      if (epico !== (l.epico || null) || resumo !== (l.epico_resumo || null)) {
+        atualizar.run(epico, resumo, l.chave);
+        corrigidos++;
+      }
+    }
+    d.exec('COMMIT');
+  } catch (e) {
+    d.exec('ROLLBACK');
+    throw e;
+  }
+  return corrigidos;
 }
 
 export function registrarImportacao({ arquivo, aba, hash, linhas, novos, atualizados, ignorados }) {

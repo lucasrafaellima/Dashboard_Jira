@@ -38,10 +38,15 @@ async function principal() {
   }
 
   if (soTestar) {
-    const projetos = await listarProjetos(cfg);
-    console.log(`Projetos visíveis (${projetos.length}):`);
-    for (const p of projetos) console.log(`  ${p.chave.padEnd(12)} ${p.nome}`);
-    console.log('\nColoque as chaves desejadas em JIRA_PROJETOS (separadas por vírgula).');
+    try {
+      const projetos = await listarProjetos(cfg);
+      console.log(`Projetos visíveis (${projetos.length}):`);
+      for (const p of projetos) console.log(`  ${p.chave.padEnd(12)} ${p.nome}`);
+      console.log('\nColoque as chaves desejadas em JIRA_PROJETOS (separadas por vírgula).');
+    } catch (e) {
+      console.error(`Não consegui listar os projetos: ${e.message}`);
+      process.exitCode = 1;
+    }
     return;
   }
 
@@ -77,6 +82,7 @@ async function principal() {
     + `${r.removidos ? `, ${r.removidos} removidas` : ''}`
     + `${r.falhas ? `, ${r.falhas} origem(ns) com erro` : ''}.`,
   );
+  if (r.epicosResolvidos) console.log(`Hierarquia: ${r.epicosResolvidos} itens tiveram o épico atualizado.`);
   console.log(`Base agora com ${contarItens()} itens.`);
   if (r.falhas) process.exitCode = 1;
 }

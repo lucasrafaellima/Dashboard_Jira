@@ -45,6 +45,25 @@ for (const [alias, campo] of [
   ['tipo de problema', 'tipo_item'],
   ['espaco', 'origem'],
   ['prazo', 'data_limite'],
+  // data da resolucao — como o Jira nomeia a coluna nas exportacoes
+  ['resolvido', 'concluido_em'],
+  ['resolvida', 'concluido_em'],
+  ['resolved', 'concluido_em'],
+  ['data da resolucao', 'concluido_em'],
+  ['concluido em', 'concluido_em'],
+  // hierarquia: as exportacoes do Jira chamam a coluna do pai de varios jeitos
+  ['pai', 'pai'],
+  ['parent', 'pai'],
+  ['chave do pai', 'pai'],
+  ['parent key', 'pai'],
+  ['item pai', 'pai'],
+  ['epico', 'epico'],
+  ['epic', 'epico'],
+  ['link epic', 'epico'],
+  ['epic link', 'epico'],
+  ['nome do epic', 'epico_resumo'],
+  ['rotulo epic', 'epico_resumo'],
+  ['epic name', 'epico_resumo'],
 ]) POR_TITULO.set(chaveComparacao(alias), campo);
 
 /** Mapeia um cabecalho da planilha para o campo interno (ou null). */
@@ -175,6 +194,22 @@ export function canonizarStatus(status, categoriaApi) {
 
 export function categoriaStatus(status, categoriaApi) {
   return canonizarStatus(status, categoriaApi).categoria;
+}
+
+/**
+ * Quando a atividade foi concluida.
+ *
+ * Vale a data em que o Jira registrou a resolucao (`concluido_em`). O
+ * "Atualizado(a)" só entra quando ela nao existe — em item fechado por um
+ * workflow sem resolucao, ou vindo de planilha antiga sem essa coluna. Os dois
+ * costumam divergir: basta alguem comentar num chamado fechado no mes passado
+ * para o "Atualizado" pular para o mes atual e levar a conclusao junto.
+ *
+ * @param {object} item linha da base
+ * @returns {string|null} data ISO da conclusao, ou null se nao concluida
+ */
+export function dataDeConclusao(item) {
+  return item?.concluido_em || item?.atualizado || null;
 }
 
 /**
@@ -336,6 +371,22 @@ export function normalizarTipo(tipo) {
   return APELIDO_TIPO.get(chaveComparacao(s)) ?? s;
 }
 
+/** O item e um epico? Vale para "Epic", "Épico" e o que mais o Jira mandar. */
+export function ehEpico(tipo) {
+  return normalizarTipo(tipo) === 'Epic';
+}
+
+/** Rotulo dos itens que nao estao pendurados em nenhum epico. */
+export const SEM_EPICO = '(sem épico)';
+
+/** Rotulo de um epico para graficos e filtros: "WIK-193 · Julho de 2026". */
+export function rotuloEpico(chave, resumo) {
+  const k = String(chave ?? '').trim();
+  if (!k) return SEM_EPICO;
+  const r = String(resumo ?? '').trim();
+  return r ? `${k} · ${r}` : k;
+}
+
 /** Nome de pessoa; ausencia (celula vazia ou "Sem responsável") vira "(vazio)". */
 export function normalizarPessoa(nome) {
   const s = String(nome ?? '').trim();
@@ -359,6 +410,15 @@ export function normalizarPessoa(nome) {
 export function normalizarLinha(bruto) {
   const chave = String(bruto.chave ?? '').trim().toUpperCase();
   if (!chave || !/^[A-Z][A-Z0-9]*-\d+$/.test(chave)) return null;
+
+  // so aceita como pai/epico o que tem cara de chave do Jira ("CRM-171"); a
+  // exportacao em planilha as vezes traz o titulo do epico nessa coluna
+  const chaveOuVazio = (v) => {
+    const s = String(v ?? '').trim().toUpperCase();
+    return /^[A-Z][A-Z0-9]*-\d+$/.test(s) ? s : '';
+  };
+  const pai = chaveOuVazio(bruto.pai);
+  const epico = chaveOuVazio(bruto.epico);
 
   const statusOrigem = String(bruto.status ?? '').trim() || 'Sem status';
   const origem = String(bruto.origem ?? '').trim();
@@ -387,9 +447,19 @@ export function normalizarLinha(bruto) {
     resolucao,
     criado: normalizarData(bruto.criado),
     atualizado: normalizarData(bruto.atualizado),
+    // so faz sentido guardar em item concluido: um "Cancelado" tambem tem
+    // resolucao no Jira, e ela vale para saber quando ele saiu da fila
+    concluido_em: normalizarData(bruto.concluido_em),
     data_limite: normalizarData(bruto.data_limite),
     projeto,
     origem,
     espaco: normalizarEspaco(origem, projeto, chave),
+    pai,
+    pai_tipo: pai ? normalizarTipo(bruto.pai_tipo) : '',
+    pai_resumo: pai ? String(bruto.pai_resumo ?? '').trim() : '',
+    // o epico definitivo sai de resolverEpicos(), que sobe a cadeia inteira de
+    // pais; aqui fica so o que a propria linha ja informou
+    epico,
+    epico_resumo: epico ? String(bruto.epico_resumo ?? '').trim() : '',
   };
 }

@@ -5,7 +5,7 @@
 //
 //   node tools/padronizar.js            -> mostra o que mudaria, sem gravar
 //   node tools/padronizar.js --aplicar  -> grava as correcoes
-import { conectar } from '../src/banco.js';
+import { conectar, resolverEpicos } from '../src/banco.js';
 import {
   canonizarStatus, normalizarPrioridade, normalizarTipo,
   normalizarResolucao, ehResolucaoNaoEntregue, espacoDoProjeto, normalizarEspaco,
@@ -108,6 +108,13 @@ if (!aplicar) {
   console.log(`\n${mudancas.length} itens atualizados.`);
 } else {
   console.log('\nBase já está padronizada.');
+}
+
+// a padronizacao mexe no tipo do item, e e o tipo que diz quem e epico —
+// entao a cadeia pai -> epico precisa ser refeita depois dela
+if (aplicar) {
+  const epicos = resolverEpicos();
+  console.log(`Hierarquia: ${epicos} itens tiveram o épico atualizado.`);
 }
 
 console.log('\nComo ficou:');
