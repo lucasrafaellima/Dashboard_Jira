@@ -439,18 +439,26 @@ function renderizarProdutividade(p) {
   const parcial = resumo.emCurso && resumo.decorridos < 7;
   const rotuloBase = parcial ? 'mesmo trecho da semana passada' : 'semana anterior';
 
+  // os indicadores e o gráfico ao lado seguem o responsável selecionado; só o
+  // ranking abaixo ignora essa seleção. Dizer de quem é o número evita ler o
+  // total de uma pessoa como se fosse o da equipe
+  const recorte = estado.responsaveis.size ? listaCurta(estado.responsaveis, 3) : '';
+  $('#semanas-recorte').textContent = recorte ? `— ${recorte}` : '— equipe inteira';
+
   $('#produtividade-semana').textContent =
     `— semana de ${semanaPorExtenso(resumo.inicio, resumo.fim)}`
-    + (parcial ? ` (${resumo.decorridos} de 7 dias corridos)` : '');
+    + (parcial ? ` (${resumo.decorridos} de 7 dias corridos)` : '')
+    + (recorte ? ` · indicadores de ${recorte}` : '');
 
+  const dequem = recorte || 'toda a equipe';
   $('#produtividade-kpis').innerHTML = [
-    ['Concluídas na semana', num(resumo.atual), 'Atividades concluídas na semana atual, somando toda a equipe'],
+    ['Concluídas na semana', num(resumo.atual), `Atividades concluídas na semana atual — ${dequem}`],
     [`Contra ${rotuloBase}`, pilulaVariacao(resumo.variacao, resumo.delta),
       `Base de comparação: ${num(resumo.comparavel)} conclusões${parcial ? ` (a semana anterior fechou com ${num(resumo.anterior)})` : ''}`],
-    ['Colaboradores ativos', num(resumo.ativos), 'Quantos concluíram ao menos uma atividade na semana'],
+    ['Colaboradores ativos', num(resumo.ativos), `Quantos concluíram ao menos uma atividade na semana — ${dequem}`],
     ['Média por colaborador', String(resumo.porColaborador).replace('.', ','), 'Concluídas na semana ÷ colaboradores ativos'],
     ['Média das semanas anteriores', String(resumo.media).replace('.', ','),
-      `Ritmo da equipe nas ${semanas.length - 1} semanas anteriores`],
+      `Ritmo nas ${semanas.length - 1} semanas anteriores — ${dequem}`],
   ]
     .map(([r, v, dica]) => `<li title="${esc(dica)}"><b>${v}</b><span>${r}</span></li>`)
     .join('');
@@ -481,8 +489,9 @@ function renderizarProdutividade(p) {
   $('#produtividade-nota').textContent = [
     `Cada atividade entra na semana em que foi concluída. Janela de ${semanas.length} semanas`
       + ` (${janela}), de segunda a domingo.`,
-    'Os filtros de responsável e de período não valem neste cartão — os demais (espaço, épico,'
-      + ' tipo, prioridade) sim.',
+    'O ranking traz sempre todo mundo, mesmo com alguém selecionado — é por ele que se troca a'
+      + ' seleção. Os indicadores acima e o gráfico ao lado seguem quem estiver marcado.',
+    'O filtro de período não vale neste cartão; espaço, épico, tipo e prioridade valem.',
     resumo.emCurso
       ? null
       : 'Sem conclusões nas últimas semanas: a janela recuou até a última semana com entregas.',

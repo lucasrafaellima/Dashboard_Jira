@@ -116,11 +116,48 @@ function variacaoPct(atual, base) {
 const somar = (lista) => lista.reduce((s, v) => s + v, 0);
 const media1 = (lista) => (lista.length ? +(somar(lista) / lista.length).toFixed(1) : 0);
 
+/** Uma linha por conclusao: o dia em que fechou e de quem foi. */
+function eventosDeConclusao(itens) {
+  const eventos = [];
+  for (const it of itens) {
+    const fim = dataDeConclusao(it);
+    if (fim) eventos.push({ dia: soDia(fim), quem: it.responsavel || SEM_RESPONSAVEL });
+  }
+  return eventos;
+}
+
+/**
+ * Espalha as conclusoes por uma janela de semanas ja definida.
+ *
+ * A janela vem de fora porque o cartao a percorre duas vezes, com populacoes
+ * diferentes (o ranking inteiro e o recorte do responsavel selecionado), e as
+ * duas precisam cair exatamente nas mesmas semanas — senao a faisca da tabela e
+ * as barras ao lado falariam de periodos diferentes.
+ *
+ * @returns {{ pessoas: Map<string, object>, totais: number[] }}
+ */
+function distribuirPorSemana(eventos, { inicios, posicao, ultima, limiteAnterior }) {
+  const pessoas = new Map();
+  const totais = inicios.map(() => 0);
+  for (const e of eventos) {
+    const i = posicao.get(inicioDaSemana(e.dia));
+    if (i == null) continue;
+    if (!pessoas.has(e.quem)) {
+      pessoas.set(e.quem, { rotulo: e.quem, serie: inicios.map(() => 0), ateAqui: 0 });
+    }
+    const p = pessoas.get(e.quem);
+    p.serie[i]++;
+    totais[i]++;
+    if (i === ultima - 1 && e.dia < limiteAnterior) p.ateAqui++;
+  }
+  return { pessoas, totais };
+}
+
 /**
  * Produtividade semanal por colaborador — quantas atividades cada um concluiu
  * em cada uma das ultimas semanas, com o comparativo contra a semana anterior.
  *
- * Duas decisoes que mudam o numero e por isso ficam explicitas:
+ * Tres decisoes que mudam o numero e por isso ficam explicitas:
  *
  *   - **a semana em curso e parcial**. Comparar uma terca-feira com uma semana
  *     inteira acusaria queda de 60% toda segunda. Quando a ultima semana ainda
@@ -131,17 +168,21 @@ const media1 = (lista) => (lista.length ? +(somar(lista) / lista.length).toFixed
  *   - **conclusao e o que conta**. Produtividade aqui e entrega, entao o item
  *     entra na semana em que foi concluido (ver `dataDeConclusao`), nao na
  *     semana em que nasceu.
+ *   - **o ranking e o total falam de populacoes diferentes**, de proposito. O
+ *     ranking vem de `concluidas`, que ignora o filtro de responsaveis: e por
+ *     ele que se troca a selecao, e filtrado deixaria uma linha so na tela. Ja
+ *     os totais por semana e o resumo vem de `concluidasDoFiltro`, que respeita
+ *     a selecao — clicar num colaborador refaz o grafico ao lado com o ritmo
+ *     dele. A janela de semanas sai do conjunto inteiro nos dois casos, para
+ *     que a selecao mude os numeros e nunca o periodo debaixo deles.
  *
- * @param {object[]} concluidas itens ja concluidos (filtrados fora daqui)
+ * @param {object[]} concluidas concluidas ignorando o filtro de responsaveis
+ * @param {object[]} [concluidasDoFiltro] concluidas respeitando esse filtro
  * @param {number} [semanas] tamanho da janela, contando a semana atual
  */
-function produtividadeSemanal(concluidas, semanas = SEMANAS_COMPARADAS) {
+function produtividadeSemanal(concluidas, concluidasDoFiltro = concluidas, semanas = SEMANAS_COMPARADAS) {
   const hoje = new Date().toISOString().slice(0, 10);
-  const eventos = [];
-  for (const it of concluidas) {
-    const fim = dataDeConclusao(it);
-    if (fim) eventos.push({ dia: soDia(fim), quem: it.responsavel || SEM_RESPONSAVEL });
-  }
+  const eventos = eventosDeConclusao(concluidas);
 
   // A janela normalmente termina na semana de hoje. Numa base parada (sem
   // sincronizacao ha um mes) ou num recorte historico, isso deixaria o cartao
@@ -168,22 +209,16 @@ function produtividadeSemanal(concluidas, semanas = SEMANAS_COMPARADAS) {
   // limite (exclusivo) do trecho equivalente na semana anterior
   const limiteAnterior = ultima > 0 ? somarDias(inicios[ultima - 1], decorridos) : null;
 
-  const porQuem = new Map();
-  const totais = inicios.map(() => 0);
+  const janela = { inicios, posicao, ultima, limiteAnterior };
+  const { pessoas } = distribuirPorSemana(eventos, janela);
+  // mesma janela, so que com o recorte de responsaveis valendo
+  const recorte = distribuirPorSemana(
+    concluidasDoFiltro === concluidas ? eventos : eventosDeConclusao(concluidasDoFiltro),
+    janela,
+  );
+  const totais = recorte.totais;
 
-  for (const e of eventos) {
-    const i = posicao.get(inicioDaSemana(e.dia));
-    if (i == null) continue;
-    if (!porQuem.has(e.quem)) {
-      porQuem.set(e.quem, { rotulo: e.quem, serie: inicios.map(() => 0), ateAqui: 0 });
-    }
-    const r = porQuem.get(e.quem);
-    r.serie[i]++;
-    totais[i]++;
-    if (i === ultima - 1 && e.dia < limiteAnterior) r.ateAqui++;
-  }
-
-  const colaboradores = [...porQuem.values()].map((r) => {
+  const colaboradores = [...pessoas.values()].map((r) => {
     const atual = r.serie[ultima];
     const anterior = ultima > 0 ? r.serie[ultima - 1] : 0;
     const comparavel = emCurso ? r.ateAqui : anterior;
@@ -209,12 +244,13 @@ function produtividadeSemanal(concluidas, semanas = SEMANAS_COMPARADAS) {
     return b.atual - a.atual || b.total - a.total || a.rotulo.localeCompare(b.rotulo, 'pt-BR');
   });
 
+  // o resumo acompanha o grafico ao lado: os dois falam do recorte selecionado,
+  // e nao do ranking inteiro que fica na tabela
+  const noRecorte = [...recorte.pessoas.values()];
   const atual = totais[ultima];
   const anterior = ultima > 0 ? totais[ultima - 1] : 0;
-  const comparavel = emCurso
-    ? somar(colaboradores.map((c) => c.comparavel))
-    : anterior;
-  const ativos = colaboradores.filter((c) => c.atual > 0).length;
+  const comparavel = emCurso ? somar(noRecorte.map((p) => p.ateAqui)) : anterior;
+  const ativos = noRecorte.filter((p) => p.serie[ultima] > 0).length;
 
   return {
     semanas: inicios.map((inicio, i) => ({
@@ -458,17 +494,19 @@ export function montarDashboard(filtros = {}) {
       'responsaveis', (c) => ordenarResponsaveis(contarPor(c.criadas, 'responsavel')),
     ),
     serieMensal: serieMensal(semData.criadas, semData.concluidas),
-    // O cartao ignora dois filtros de proposito: o de **responsaveis**, porque
-    // eles sao o eixo do ranking (marcar um deixaria uma linha so, sem como
-    // trocar a selecao), e o de **datas**, porque as semanas ja sao o recorte —
-    // com um mes filtrado sobrariam 4 semanas e nao haveria historico para
-    // comparar. Os demais filtros (espaco, epico, tipo...) continuam valendo.
+    // O filtro de **datas** nao vale aqui, nos dois conjuntos: as semanas ja sao
+    // o recorte, e com um mes filtrado sobrariam 4 semanas — sem historico para
+    // comparar. Ja o de **responsaveis** vale so no segundo: o ranking (1o) traz
+    // todo mundo, porque e por ele que se troca a selecao; os totais por semana
+    // e o resumo (2o) seguem quem estiver selecionado. Espaco, epico, tipo e
+    // prioridade continuam valendo nos dois.
     produtividadeSemanal: produtividadeSemanal(
       separarPorPeriodo(
         aplicarRecortes(todos, { ...filtros, responsaveis: [] }),
         { ...filtros, de: null, ate: null },
         incluirCancelados,
       ).concluidas,
+      semData.concluidas,
     ),
     tempoDeConclusao: tempoDeConclusao(concluidas),
     padronizacao: padronizacaoAplicada(itens),

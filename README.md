@@ -239,10 +239,15 @@ Três coisas mudam a leitura do número e por isso ficam ditas na tela:
   tamanho: sair de 1 para 2 conclusões também é "+100%". Sem base de comparação a pílula
   diz *novo* em vez de inventar um número.
 
-O cartão ignora dois filtros de propósito: o de **responsáveis**, porque eles são o eixo do
-ranking (marcar um deixaria uma linha só), e o de **período**, porque as semanas já são o
-recorte. Espaço, épico, tipo e prioridade continuam valendo. Clicar num colaborador filtra
-o resto do painel por ele.
+Clicar num colaborador filtra o painel inteiro por ele — inclusive os indicadores do cartão
+e o gráfico **Concluídas por semana** ao lado, que passam a mostrar o ritmo só daquela
+pessoa. O **ranking continua trazendo todo mundo** (as outras linhas apenas desbotam),
+porque é por ele que se troca a seleção: filtrado, sobraria uma linha só e não haveria como
+escolher outro nome. O título dos dois cartões diz de quem é o número em vigor.
+
+O filtro de **período** não vale aqui, porque as semanas já são o recorte — com um mês
+filtrado sobrariam 4 semanas e não haveria histórico para comparar. Espaço, épico, tipo e
+prioridade valem normalmente.
 
 Se a base estiver parada (sem sincronização há semanas), a janela recua até a última semana
 com entregas em vez de mostrar oito semanas zeradas — a nota embaixo do cartão avisa quando
