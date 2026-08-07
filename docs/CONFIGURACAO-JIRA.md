@@ -394,4 +394,4 @@ Quando a mesma issue vem das duas fontes, **vence a mais recente** pelo campo
 *Atualizado*, e a issue passa a pertencer à origem da API. Na prática: depois da
 primeira sincronização, você pode parar de exportar planilha.
 
-## Teste de API para commitar o projeto
+## Teste de API para commitar o projeto v2
