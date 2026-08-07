@@ -86,6 +86,163 @@ function serieMensal(criadas, concluidas) {
   return [...meses.values()].sort((a, b) => a.mes.localeCompare(b.mes));
 }
 
+// ------------------------------------------------------------ produtividade semanal
+
+const DIA_MS = 86400000;
+
+/** Quantas semanas o comparativo mostra, contando a atual. */
+const SEMANAS_COMPARADAS = 8;
+
+const soDia = (iso) => String(iso).slice(0, 10);
+const somarDias = (dia, n) => new Date(Date.parse(`${dia}T00:00:00Z`) + n * DIA_MS)
+  .toISOString().slice(0, 10);
+
+/**
+ * Segunda-feira da semana de um dia, como "aaaa-mm-dd".
+ * Semana de segunda a domingo — e o que a operacao entende por "essa semana",
+ * e nao a semana do domingo que o `getDay()` do JS usa.
+ */
+function inicioDaSemana(dia) {
+  const d = new Date(`${soDia(dia)}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+  return d.toISOString().slice(0, 10);
+}
+
+/** Variacao percentual contra uma base; `null` quando a base e zero. */
+function variacaoPct(atual, base) {
+  return base ? +(((atual - base) / base) * 100).toFixed(1) : null;
+}
+
+const somar = (lista) => lista.reduce((s, v) => s + v, 0);
+const media1 = (lista) => (lista.length ? +(somar(lista) / lista.length).toFixed(1) : 0);
+
+/**
+ * Produtividade semanal por colaborador — quantas atividades cada um concluiu
+ * em cada uma das ultimas semanas, com o comparativo contra a semana anterior.
+ *
+ * Duas decisoes que mudam o numero e por isso ficam explicitas:
+ *
+ *   - **a semana em curso e parcial**. Comparar uma terca-feira com uma semana
+ *     inteira acusaria queda de 60% toda segunda. Quando a ultima semana ainda
+ *     esta correndo, a comparacao e contra o **mesmo trecho** da semana passada
+ *     (do inicio ate o mesmo dia da semana) — e isso que `comparavel` guarda.
+ *     `anterior` continua trazendo a semana passada fechada, para quem quiser o
+ *     numero cheio.
+ *   - **conclusao e o que conta**. Produtividade aqui e entrega, entao o item
+ *     entra na semana em que foi concluido (ver `dataDeConclusao`), nao na
+ *     semana em que nasceu.
+ *
+ * @param {object[]} concluidas itens ja concluidos (filtrados fora daqui)
+ * @param {number} [semanas] tamanho da janela, contando a semana atual
+ */
+function produtividadeSemanal(concluidas, semanas = SEMANAS_COMPARADAS) {
+  const hoje = new Date().toISOString().slice(0, 10);
+  const eventos = [];
+  for (const it of concluidas) {
+    const fim = dataDeConclusao(it);
+    if (fim) eventos.push({ dia: soDia(fim), quem: it.responsavel || SEM_RESPONSAVEL });
+  }
+
+  // A janela normalmente termina na semana de hoje. Numa base parada (sem
+  // sincronizacao ha um mes) ou num recorte historico, isso deixaria o cartao
+  // inteiro zerado: nesse caso ela desliza para a ultima semana com entrega,
+  // que ao menos tem o que comparar. `emCurso` diz qual dos dois aconteceu.
+  const maisRecente = eventos.reduce((m, e) => (e.dia > m ? e.dia : m), '');
+  const semanaDeHoje = inicioDaSemana(hoje);
+  let ancora = semanaDeHoje;
+  if (maisRecente) {
+    const semanaDoDado = inicioDaSemana(maisRecente);
+    const primeira = somarDias(semanaDeHoje, -7 * (semanas - 1));
+    if (semanaDoDado > ancora || semanaDoDado < primeira) ancora = semanaDoDado;
+  }
+  const emCurso = ancora === semanaDeHoje;
+
+  const inicios = Array.from({ length: semanas }, (_, i) => somarDias(ancora, -7 * (semanas - 1 - i)));
+  const posicao = new Map(inicios.map((s, i) => [s, i]));
+  const ultima = semanas - 1;
+
+  // dias ja corridos da semana atual (1 = segunda-feira); a semana fechada vale 7
+  const decorridos = emCurso
+    ? Math.round((Date.parse(`${hoje}T00:00:00Z`) - Date.parse(`${ancora}T00:00:00Z`)) / DIA_MS) + 1
+    : 7;
+  // limite (exclusivo) do trecho equivalente na semana anterior
+  const limiteAnterior = ultima > 0 ? somarDias(inicios[ultima - 1], decorridos) : null;
+
+  const porQuem = new Map();
+  const totais = inicios.map(() => 0);
+
+  for (const e of eventos) {
+    const i = posicao.get(inicioDaSemana(e.dia));
+    if (i == null) continue;
+    if (!porQuem.has(e.quem)) {
+      porQuem.set(e.quem, { rotulo: e.quem, serie: inicios.map(() => 0), ateAqui: 0 });
+    }
+    const r = porQuem.get(e.quem);
+    r.serie[i]++;
+    totais[i]++;
+    if (i === ultima - 1 && e.dia < limiteAnterior) r.ateAqui++;
+  }
+
+  const colaboradores = [...porQuem.values()].map((r) => {
+    const atual = r.serie[ultima];
+    const anterior = ultima > 0 ? r.serie[ultima - 1] : 0;
+    const comparavel = emCurso ? r.ateAqui : anterior;
+    const anteriores = r.serie.slice(0, ultima);
+    return {
+      rotulo: r.rotulo,
+      serie: r.serie,
+      atual,
+      anterior,
+      comparavel,
+      delta: atual - comparavel,
+      variacao: variacaoPct(atual, comparavel),
+      media: media1(anteriores),
+      melhor: Math.max(...r.serie),
+      total: somar(r.serie),
+    };
+  });
+
+  // quem entregou nesta semana vem primeiro; "(vazio)" nao e pessoa e fica no fim
+  colaboradores.sort((a, b) => {
+    if (a.rotulo === SEM_RESPONSAVEL) return 1;
+    if (b.rotulo === SEM_RESPONSAVEL) return -1;
+    return b.atual - a.atual || b.total - a.total || a.rotulo.localeCompare(b.rotulo, 'pt-BR');
+  });
+
+  const atual = totais[ultima];
+  const anterior = ultima > 0 ? totais[ultima - 1] : 0;
+  const comparavel = emCurso
+    ? somar(colaboradores.map((c) => c.comparavel))
+    : anterior;
+  const ativos = colaboradores.filter((c) => c.atual > 0).length;
+
+  return {
+    semanas: inicios.map((inicio, i) => ({
+      inicio,
+      fim: somarDias(inicio, 6),
+      total: totais[i],
+      // a ultima barra pode estar pela metade: o grafico marca isso
+      parcial: i === ultima && emCurso && decorridos < 7,
+    })),
+    colaboradores,
+    resumo: {
+      atual,
+      anterior,
+      comparavel,
+      delta: atual - comparavel,
+      variacao: variacaoPct(atual, comparavel),
+      // media das semanas fechadas anteriores — a referencia de ritmo
+      media: media1(totais.slice(0, ultima)),
+      ativos,
+      porColaborador: ativos ? +(atual / ativos).toFixed(1) : 0,
+      emCurso,
+      decorridos,
+      inicio: inicios[ultima],
+      fim: somarDias(inicios[ultima], 6),
+    },
+  };
+}
+
 /** Tempo em dias entre criacao e conclusao (mediana + media). */
 function tempoDeConclusao(concluidas) {
   const dias = [];
@@ -301,6 +458,18 @@ export function montarDashboard(filtros = {}) {
       'responsaveis', (c) => ordenarResponsaveis(contarPor(c.criadas, 'responsavel')),
     ),
     serieMensal: serieMensal(semData.criadas, semData.concluidas),
+    // O cartao ignora dois filtros de proposito: o de **responsaveis**, porque
+    // eles sao o eixo do ranking (marcar um deixaria uma linha so, sem como
+    // trocar a selecao), e o de **datas**, porque as semanas ja sao o recorte —
+    // com um mes filtrado sobrariam 4 semanas e nao haveria historico para
+    // comparar. Os demais filtros (espaco, epico, tipo...) continuam valendo.
+    produtividadeSemanal: produtividadeSemanal(
+      separarPorPeriodo(
+        aplicarRecortes(todos, { ...filtros, responsaveis: [] }),
+        { ...filtros, de: null, ate: null },
+        incluirCancelados,
+      ).concluidas,
+    ),
     tempoDeConclusao: tempoDeConclusao(concluidas),
     padronizacao: padronizacaoAplicada(itens),
     periodo: { inicio: datas[0] ?? null, fim: datas[datas.length - 1] ?? null },

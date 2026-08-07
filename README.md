@@ -198,12 +198,14 @@ sem precisar de uma sincronização completa.
 - **Atividades concluídas por responsável** — pizza.
 - **Tickets criados por espaços** — barras horizontais.
 - **KPIs**: atividades criadas, concluídas e taxa de conclusão.
+- **Produtividade semanal por colaborador** — ranking das conclusões da semana com o
+  comparativo das semanas anteriores (detalhes [abaixo](#produtividade-semanal-por-colaborador)).
 - **Extras**: evolução mensal (criadas × concluídas), por tipo, por prioridade, tempo médio/mediano até concluir, itens sem responsável, itens com data limite vencida, e a tabela detalhada.
 - Botão **PDF** usa a impressão do navegador, mas o que sai é um relatório, não uma foto da tela:
   - **A4 paisagem**, com capa (período coberto, filtros aplicados, data de geração e site do Jira
     de origem) e rodapé repetido em todas as páginas;
   - a ordem muda para leitura: KPIs → status e panorama → espaços e responsáveis → evolução
-    mensal → demais gráficos → padronização de status;
+    mensal → produtividade semanal → demais gráficos → padronização de status;
   - as listas de **Espaços** e **Responsável** saem inteiras, em duas colunas — na tela elas rolam,
     no papel rolagem viraria corte;
   - ficam de fora os controles, a tabela de atividades (essa vai no Excel) e as tabelas
@@ -216,6 +218,35 @@ sem precisar de uma sincronização completa.
   cancelados): com filtro, só vem o que está filtrado. A tela mostra no máximo 500 linhas,
   mas a planilha leva **todas** as atividades do filtro. Datas saem como data de verdade
   (ordenável no Excel), com a primeira linha congelada e autofiltro ligado.
+
+### Produtividade semanal por colaborador
+
+Mostra quantas atividades cada pessoa **concluiu** em cada uma das **8 últimas semanas**
+(de segunda a domingo) e compara a semana atual com a anterior. Ao lado, o gráfico
+**Concluídas por semana** traz o total da equipe; clicar numa barra recorta o período
+naquela semana, do mesmo jeito que clicar num mês na evolução mensal.
+
+Três coisas mudam a leitura do número e por isso ficam ditas na tela:
+
+- **A semana em curso é parcial.** Comparar uma terça-feira com uma semana inteira acusaria
+  queda toda segunda. Enquanto a semana não fecha, a comparação é contra o **mesmo trecho**
+  da semana passada (do começo dela até o mesmo dia da semana) — é o que a coluna
+  *Mesmo trecho anterior* traz. A faixa de indicadores guarda no `title` quanto a semana
+  anterior fechou, para quem quiser o número cheio.
+- **Conta a data de conclusão**, não a de criação: uma atividade aberta há um mês e fechada
+  ontem é produtividade de ontem.
+- **A variação vem com o absoluto junto** (`▲ +100% (+1)`). Sozinho, o percentual mente de
+  tamanho: sair de 1 para 2 conclusões também é "+100%". Sem base de comparação a pílula
+  diz *novo* em vez de inventar um número.
+
+O cartão ignora dois filtros de propósito: o de **responsáveis**, porque eles são o eixo do
+ranking (marcar um deixaria uma linha só), e o de **período**, porque as semanas já são o
+recorte. Espaço, épico, tipo e prioridade continuam valendo. Clicar num colaborador filtra
+o resto do painel por ele.
+
+Se a base estiver parada (sem sincronização há semanas), a janela recua até a última semana
+com entregas em vez de mostrar oito semanas zeradas — a nota embaixo do cartão avisa quando
+isso acontece.
 
 ### O que conta como concluída
 

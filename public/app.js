@@ -53,10 +53,25 @@ function dataCurta(iso) {
   return `${dia}/${m}/${a}${h ? ` ${h.slice(0, 5)}` : ''}`;
 }
 
+const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+
 function mesCurto(ym) {
   const [a, m] = ym.split('-');
-  return `${['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'][+m - 1]}/${a.slice(2)}`;
+  return `${MESES[+m - 1]}/${a.slice(2)}`;
 }
+
+/** Semana em texto curto: "04–10/ago", ou "28/jul–03/ago" quando vira o mês. */
+function rotuloSemana(inicio, fim) {
+  const [, mi, di] = inicio.split('-');
+  const [, mf, df] = fim.split('-');
+  return mi === mf
+    ? `${di}–${df}/${MESES[+mf - 1]}`
+    : `${di}/${MESES[+mi - 1]}–${df}/${MESES[+mf - 1]}`;
+}
+
+/** Semana por extenso, para tooltips: "04/08 a 10/08/2026". */
+const semanaPorExtenso = (inicio, fim) =>
+  `${inicio.slice(8)}/${inicio.slice(5, 7)} a ${fim.slice(8)}/${fim.slice(5, 7)}/${fim.slice(0, 4)}`;
 
 /** Topo "redondo" do eixo Y (1, 2, 5 x 10^n). */
 function topoEixo(max) {
@@ -89,11 +104,25 @@ function mesSelecionado() {
   return estado.de === `${ym}-01` && estado.ate === ultimoDiaDoMes(ym) ? ym : null;
 }
 
+/** Soma dias a uma data "aaaa-mm-dd", devolvendo outra. */
+const somarDias = (dia, n) =>
+  new Date(Date.parse(`${dia}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+
+/** O período atual é exatamente uma semana inteira? Devolve a segunda ou null. */
+function semanaSelecionada() {
+  if (!estado.de || !estado.ate) return null;
+  return estado.ate === somarDias(estado.de, 6) ? estado.de : null;
+}
+
 /** O que está selecionado numa dimensão, com a mesma interface de um Set. */
 function selecao(dim) {
   if (dim === 'mes') {
     const m = mesSelecionado();
     return { has: (v) => v === m, size: m ? 1 : 0 };
+  }
+  if (dim === 'semana') {
+    const s = semanaSelecionada();
+    return { has: (v) => v === s, size: s ? 1 : 0 };
   }
   return estado[dim] ?? { has: () => false, size: 0 };
 }
@@ -162,7 +191,14 @@ const atraso = (i) => ` style="animation-delay:${Math.min(i * 28, 260)}ms"`;
 
 // ------------------------------------------------------------ graficos
 
-/** Barras verticais com rotulo de valor no topo — "Status das Atividades". */
+/**
+ * Barras verticais com rotulo de valor no topo — "Status das Atividades".
+ *
+ * @param {object[]} dados pontos `{ rotulo, total, valor?, dica? }`
+ * @param {object} [opcoes]
+ * @param {(rotulo: string, ponto: object) => string} [opcoes.cor] cor da barra
+ * @param {string} [opcoes.dim] dimensao que o clique filtra
+ */
 function barrasVerticais(dados, { cor, dim } = {}) {
   if (!dados.length) return vazio();
 
@@ -189,8 +225,8 @@ function barrasVerticais(dados, { cor, dim } = {}) {
     const val = valorDe(d);
     // a barra pode ser rasteira ou zerada: a área de clique cobre a coluna
     // inteira, senão sobraria um alvo de 1px
-    let bloco = `<rect${clicavel(dim, val, 'area-clique')} x="${margem.esq + passo * i}" y="${margem.top}" width="${passo}" height="${alturaUtil}" fill="transparent"><title>${esc(d.rotulo)}: ${d.total}</title></rect>`;
-    bloco += `<rect${clicavel(dim, val, 'cresce-y')} x="${x}" y="${y}" width="${larguraBarra}" height="${Math.max(alt, 0)}" fill="${cor ? cor(d.rotulo) : PALETA[0]}" rx="2"${atraso(i)}><title>${esc(d.rotulo)}: ${d.total}</title></rect>`;
+    let bloco = `<rect${clicavel(dim, val, 'area-clique')} x="${margem.esq + passo * i}" y="${margem.top}" width="${passo}" height="${alturaUtil}" fill="transparent"><title>${esc(d.dica ?? `${d.rotulo}: ${d.total}`)}</title></rect>`;
+    bloco += `<rect${clicavel(dim, val, 'cresce-y')} x="${x}" y="${y}" width="${larguraBarra}" height="${Math.max(alt, 0)}" fill="${cor ? cor(d.rotulo, d) : PALETA[0]}" rx="2"${atraso(i)}><title>${esc(d.dica ?? `${d.rotulo}: ${d.total}`)}</title></rect>`;
     bloco += `<text class="rotulo-valor surge" x="${x + larguraBarra / 2}" y="${y - 6}" text-anchor="middle"${atraso(i)}>${d.total}</text>`;
 
     const palavras = String(d.rotulo).split(' ');
@@ -328,6 +364,145 @@ function barrasAgrupadas(serie) {
   return svg(L, A, saida);
 }
 
+// -------------------------------------------------------- produtividade semanal
+
+/**
+ * Faisca: uma barrinha por semana, dentro da celula da tabela. Serve para ler o
+ * ritmo do colaborador de relance — se a semana atual e um pico, um vale ou o
+ * de sempre. A ultima barra e a semana corrente e vem destacada.
+ *
+ * A escala e a **do proprio colaborador** (o maximo dele), nao a da equipe:
+ * quem entrega 3 por semana teria barras invisiveis ao lado de quem entrega 30,
+ * e a leitura aqui e da tendencia de cada um, nao da comparacao entre eles —
+ * essa fica nas colunas de numero ao lado.
+ */
+function faiscaSemanal(serie, semanas) {
+  const L = 108, A = 22;
+  const max = Math.max(1, ...serie);
+  const passo = L / serie.length;
+  const larg = Math.max(2, passo - 2.5);
+
+  const barras = serie
+    .map((v, i) => {
+      const alt = (v / max) * A;
+      const s = semanas[i];
+      const ultima = i === serie.length - 1;
+      // uma semana zerada nao desenha nada: um trapo de 1px seria confundido
+      // com uma entrega
+      const altura = v ? Math.max(alt, 2) : 0;
+      return `<rect x="${(i * passo).toFixed(1)}" y="${(A - altura).toFixed(1)}"`
+        + ` width="${larg.toFixed(1)}" height="${altura.toFixed(1)}" rx="1"`
+        + ` fill="${ultima ? PALETA[0] : '#c3d4ea'}">`
+        + `<title>${s ? `${rotuloSemana(s.inicio, s.fim)}: ` : ''}${v}</title></rect>`;
+    })
+    .join('');
+
+  return `<svg class="faisca" viewBox="0 0 ${L} ${A}" width="${L}" height="${A}" role="img"`
+    + ` aria-label="últimas ${serie.length} semanas">${barras}</svg>`;
+}
+
+/**
+ * Variação em pílula: seta, percentual e a diferença absoluta entre parênteses.
+ *
+ * O absoluto anda junto porque sozinho o percentual mente de tamanho — sair de
+ * 1 para 2 conclusões é "+100%" e não significa quase nada. Sem base (o
+ * colaborador não entregou nada no trecho comparado) não existe percentual, e
+ * a pílula diz "novo" em vez de inventar um número.
+ */
+function pilulaVariacao(variacao, delta) {
+  if (!delta) return '<span class="variacao estavel">estável</span>';
+  const sobe = delta > 0;
+  const pct = variacao == null
+    ? 'novo'
+    : `${sobe ? '+' : ''}${variacao.toFixed(1).replace('.', ',')}%`;
+  const abs = `${sobe ? '+' : ''}${num(delta)}`;
+  return `<span class="variacao ${sobe ? 'sobe' : 'cai'}">${sobe ? '▲' : '▼'} ${pct}`
+    + ` <em>(${abs})</em></span>`;
+}
+
+/** Cartão de produtividade semanal: faixa de indicadores + ranking + faíscas. */
+function renderizarProdutividade(p) {
+  // um servidor antigo ainda no ar responde sem este bloco (o payload sai do
+  // processo em memória, não do disco). Sem a saída aqui o cartão derrubaria o
+  // render inteiro, e a tabela de atividades lá embaixo sumiria junto.
+  if (!p?.semanas?.length) {
+    $('#tabela-produtividade tbody').innerHTML =
+      '<tr><td colspan="6">Indisponível — reinicie o servidor para carregar esta métrica.</td></tr>';
+    return;
+  }
+
+  const { resumo, semanas, colaboradores } = p;
+  const atual = semanas[semanas.length - 1];
+
+  // quando a semana ainda está correndo, a comparação é contra o mesmo trecho
+  // da semana passada — senão toda segunda-feira pareceria um desabamento
+  const parcial = resumo.emCurso && resumo.decorridos < 7;
+  const rotuloBase = parcial ? 'mesmo trecho da semana passada' : 'semana anterior';
+
+  $('#produtividade-semana').textContent =
+    `— semana de ${semanaPorExtenso(resumo.inicio, resumo.fim)}`
+    + (parcial ? ` (${resumo.decorridos} de 7 dias corridos)` : '');
+
+  $('#produtividade-kpis').innerHTML = [
+    ['Concluídas na semana', num(resumo.atual), 'Atividades concluídas na semana atual, somando toda a equipe'],
+    [`Contra ${rotuloBase}`, pilulaVariacao(resumo.variacao, resumo.delta),
+      `Base de comparação: ${num(resumo.comparavel)} conclusões${parcial ? ` (a semana anterior fechou com ${num(resumo.anterior)})` : ''}`],
+    ['Colaboradores ativos', num(resumo.ativos), 'Quantos concluíram ao menos uma atividade na semana'],
+    ['Média por colaborador', String(resumo.porColaborador).replace('.', ','), 'Concluídas na semana ÷ colaboradores ativos'],
+    ['Média das semanas anteriores', String(resumo.media).replace('.', ','),
+      `Ritmo da equipe nas ${semanas.length - 1} semanas anteriores`],
+  ]
+    .map(([r, v, dica]) => `<li title="${esc(dica)}"><b>${v}</b><span>${r}</span></li>`)
+    .join('');
+
+  $('#th-comparavel').textContent = parcial ? 'Mesmo trecho anterior' : 'Semana anterior';
+  $('#th-comparavel').title = parcial
+    ? 'A semana atual ainda não fechou: a comparação usa a semana passada só até o mesmo dia'
+    : 'Semana anterior fechada';
+
+  const temSelecao = estado.responsaveis.size > 0;
+  $('#tabela-produtividade tbody').innerHTML = colaboradores
+    .map((c) => {
+      const selecionado = estado.responsaveis.has(c.rotulo);
+      const classes = ['linha-colab', selecionado ? 'ativa' : '', temSelecao && !selecionado ? 'apagada' : '']
+        .filter(Boolean).join(' ');
+      return `<tr class="${classes}" data-dim="responsaveis" data-valor="${esc(c.rotulo)}">
+        <td><span${clicavel('responsaveis', c.rotulo)}>${esc(c.rotulo)}</span></td>
+        <td class="numero destaque">${num(c.atual)}</td>
+        <td class="numero">${num(c.comparavel)}</td>
+        <td class="numero">${pilulaVariacao(c.variacao, c.delta)}</td>
+        <td class="faisca-celula">${faiscaSemanal(c.serie, semanas)}</td>
+        <td class="numero suave">${String(c.media).replace('.', ',')}</td>
+      </tr>`;
+    })
+    .join('') || '<tr><td colspan="6">Nenhuma atividade concluída nas últimas semanas para os filtros selecionados.</td></tr>';
+
+  const janela = `${rotuloSemana(semanas[0].inicio, semanas[0].fim)} a ${rotuloSemana(atual.inicio, atual.fim)}`;
+  $('#produtividade-nota').textContent = [
+    `Cada atividade entra na semana em que foi concluída. Janela de ${semanas.length} semanas`
+      + ` (${janela}), de segunda a domingo.`,
+    'Os filtros de responsável e de período não valem neste cartão — os demais (espaço, épico,'
+      + ' tipo, prioridade) sim.',
+    resumo.emCurso
+      ? null
+      : 'Sem conclusões nas últimas semanas: a janela recuou até a última semana com entregas.',
+  ].filter(Boolean).join(' ');
+
+  $('#grafico-semanas').innerHTML = barrasVerticais(
+    semanas.map((s) => ({
+      rotulo: rotuloSemana(s.inicio, s.fim),
+      valor: s.inicio,
+      total: s.total,
+      parcial: s.parcial,
+      dica: `${semanaPorExtenso(s.inicio, s.fim)}: ${s.total} concluída(s)`
+        + (s.parcial ? ' — semana em curso' : ''),
+    })),
+    // a semana em curso sai mais clara: ela ainda vai crescer, e uma barra
+    // cheia ao lado das fechadas leria como queda
+    { dim: 'semana', cor: (_, d) => (d.parcial ? '#a9cd8a' : PALETA[2]) },
+  );
+}
+
 // ------------------------------------------------------------ capa do relatorio
 
 /** Lista curta com reticencias — evita uma capa gigante quando ha muitos filtros. */
@@ -415,6 +590,15 @@ function alternarMes(ym) {
   $('#ate').value = estado.ate;
 }
 
+/** Clicar numa semana recorta o período nela (segunda a domingo); de novo, desfaz. */
+function alternarSemana(inicio) {
+  const ligada = semanaSelecionada() !== inicio;
+  estado.de = ligada ? inicio : '';
+  estado.ate = ligada ? somarDias(inicio, 6) : '';
+  $('#de').value = estado.de;
+  $('#ate').value = estado.ate;
+}
+
 /**
  * Um ouvinte só para todos os gráficos: eles são reescritos a cada carga, e
  * religar evento por evento em cada barra seria trabalho perdido.
@@ -424,6 +608,8 @@ function ligarGraficos() {
     const { dim, valor } = alvo.dataset;
     if (dim === 'mes') {
       alternarMes(valor);
+    } else if (dim === 'semana') {
+      alternarSemana(valor);
     } else {
       const conjunto = estado[dim];
       if (!conjunto) return;
@@ -524,6 +710,7 @@ function renderizar(d, detalhe) {
     { dim: 'espacos' },
   );
   $('#grafico-mensal').innerHTML = barrasAgrupadas(d.serieMensal);
+  renderizarProdutividade(d.produtividadeSemanal);
   $('#grafico-tipos').innerHTML = barrasHorizontais(d.porTipo, { cor: () => PALETA[0], dim: 'tipos' });
   $('#grafico-prioridades').innerHTML = barrasHorizontais(d.porPrioridade, { dim: 'prioridades' });
   // so os 12 maiores: a lista inteira de epicos nao cabe num grafico de barras.

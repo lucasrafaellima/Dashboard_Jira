@@ -104,6 +104,38 @@
     </div>
   </section>
 
+  <section class="linha linha-5">
+    <div id="card-produtividade" class="cartao">
+      <h2>
+        Produtividade semanal por colaborador
+        <span id="produtividade-semana" class="sub"></span>
+        <span class="sub dica-clique">— clique num colaborador para filtrar</span>
+      </h2>
+      <ul id="produtividade-kpis" class="kpis-linha"></ul>
+      <div class="rolagem baixa">
+        <table id="tabela-produtividade">
+          <thead>
+            <tr>
+              <th>Colaborador</th>
+              <th class="numero">Semana atual</th>
+              <th class="numero" id="th-comparavel">Semana anterior</th>
+              <th class="numero">Variação</th>
+              <th>Últimas semanas</th>
+              <th class="numero" title="Média das semanas anteriores fechadas">Média</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p id="produtividade-nota" class="nota-cartao"></p>
+    </div>
+
+    <div id="card-semanas" class="cartao grafico">
+      <h2>Concluídas por semana <span class="sub dica-clique">— clique numa semana para recortar o período</span></h2>
+      <div id="grafico-semanas" class="area-grafico"></div>
+    </div>
+  </section>
+
   <section class="linha linha-4">
     <div id="card-tipos" class="cartao grafico">
       <h2>Por tipo de item <span class="sub dica-clique">— clique para filtrar</span></h2>

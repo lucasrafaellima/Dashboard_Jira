@@ -67,9 +67,10 @@ input[type="date"] {
 .linha-2 { grid-template-columns: 1fr 1fr 190px; }
 .linha-3 { grid-template-columns: 2fr 1fr; }
 .linha-4 { grid-template-columns: 1fr 1fr 1fr; }
+.linha-5 { grid-template-columns: 2fr 1fr; }
 
 @media (max-width: 1150px) {
-  .linha-1, .linha-2, .linha-3, .linha-4 { grid-template-columns: 1fr; }
+  .linha-1, .linha-2, .linha-3, .linha-4, .linha-5 { grid-template-columns: 1fr; }
   .coluna-kpis { flex-direction: row; }
 }
 
@@ -136,6 +137,59 @@ input[type="date"] {
 }
 .kpi strong { font-size: 34px; font-weight: 600; line-height: 1.05; font-variant-numeric: tabular-nums; }
 .kpi span { font-size: 12px; opacity: .92; margin-top: 4px; }
+
+/* ------------------------------------------------- produtividade semanal
+
+   Faixa de indicadores do cartao semanal. E parente dos .kpi da coluna da
+   direita, mas em versao clara e deitada: sao numeros de apoio dentro de um
+   cartao, e nao os tres numeros principais do painel. */
+
+.kpis-linha {
+  list-style: none; margin: 0 0 12px; padding: 0;
+  display: flex; flex-wrap: wrap; gap: 8px;
+}
+.kpis-linha li {
+  flex: 1 1 130px;
+  background: var(--azul-claro);
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.kpis-linha b {
+  font-size: 21px; font-weight: 600; line-height: 1.1;
+  color: var(--azul-escuro); font-variant-numeric: tabular-nums;
+}
+.kpis-linha span { font-size: 11px; color: var(--suave); }
+
+/* a variacao ocupa o lugar de um numero na faixa: mesma altura de linha */
+.kpis-linha .variacao { font-size: 17px; }
+
+.variacao {
+  font-weight: 600; font-size: 12px; white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.variacao.sobe { color: #3f7d32; }
+.variacao.cai { color: #b03a3a; }
+.variacao.estavel { color: var(--suave); font-weight: 400; }
+.variacao em { font-style: normal; font-weight: 400; opacity: .8; font-size: .86em; }
+
+.nota-cartao { margin: 9px 0 0; font-size: 11px; color: var(--suave); line-height: 1.4; }
+
+td.numero, th.numero { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.numero.destaque { font-weight: 600; color: var(--azul-escuro); }
+td.numero.suave { color: var(--suave); }
+td.faisca-celula { width: 118px; padding-top: 4px; padding-bottom: 2px; }
+.faisca { display: block; }
+
+/* a linha inteira filtra pelo colaborador; o nome dentro dela e o alvo
+   focavel (o mesmo arranjo dos graficos: uma marca por acao no Tab) */
+.linha-colab { cursor: pointer; transition: opacity .18s ease, background .18s ease; }
+.linha-colab.ativa { background: var(--azul-claro); }
+.linha-colab.ativa td { font-weight: 600; }
+.linha-colab.apagada { opacity: .5; }
+/* quem desbota e a linha; o nome dentro dela nao pode desbotar de novo */
+.linha-colab .marca.apagada { opacity: 1; }
 
 /* ------------------------------------------------------------ graficos */
 
@@ -403,12 +457,14 @@ td.epico { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-sp
   #card-responsaveis-lista { grid-column: span 3; order: 5; }
   #card-epicos-lista       { grid-column: span 6; order: 6; }
   #card-mensal             { grid-column: span 6; order: 7; }
-  #card-pizza              { grid-column: span 3; order: 8; }
-  #card-espacos            { grid-column: span 3; order: 9; }
-  #card-tipos              { grid-column: span 3; order: 10; }
-  #card-prioridades        { grid-column: span 3; order: 11; }
-  #card-epicos             { grid-column: span 6; order: 12; }
-  #secao-padronizacao      { grid-column: span 6; order: 13; }
+  #card-produtividade      { grid-column: span 4; order: 8; }
+  #card-semanas            { grid-column: span 2; order: 9; }
+  #card-pizza              { grid-column: span 3; order: 10; }
+  #card-espacos            { grid-column: span 3; order: 11; }
+  #card-tipos              { grid-column: span 3; order: 12; }
+  #card-prioridades        { grid-column: span 3; order: 13; }
+  #card-epicos             { grid-column: span 6; order: 14; }
+  #secao-padronizacao      { grid-column: span 6; order: 15; }
 
   .cartao {
     break-inside: avoid;
@@ -449,6 +505,20 @@ td.epico { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-sp
 
   .lista-panorama { gap: 4px; }
   .lista-panorama li { font-size: 10px; padding-bottom: 3px; break-inside: avoid; }
+
+  /* ------------------------------------------------- produtividade semanal */
+
+  .kpis-linha { gap: 3mm; margin-bottom: 3mm; }
+  .kpis-linha li { padding: 4px 6px; border-radius: 3px; break-inside: avoid; }
+  .kpis-linha b { font-size: 15px; }
+  .kpis-linha span { font-size: 8.5px; }
+  .kpis-linha .variacao { font-size: 13px; }
+  .variacao { font-size: 9.5px; }
+  .nota-cartao { font-size: 8.5px; margin-top: 3mm; }
+  /* no papel a linha selecionada ja aparece no bloco de filtros da capa;
+     desbotar as outras so gastaria tinta e atrapalharia a leitura */
+  .linha-colab.apagada { opacity: 1; }
+  .linha-colab.ativa { background: #eef4fc; }
 
   /* ---------------------------------------------------------- tabelas */
 
