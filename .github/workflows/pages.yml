@@ -45,12 +45,13 @@ jobs:
           echo "Conteúdo publicado:"
           find site -type f | sort
 
-      # `enablement: true` faz a action criar o site do Pages se ele ainda nao
-      # existir, em vez de falhar com "Get Pages site failed / Not Found". Assim
-      # nao ha um passo manual em Settings -> Pages para lembrar.
+      # PRE-REQUISITO, uma vez por repositorio:
+      #   Settings -> Pages -> Build and deployment -> Source: GitHub Actions
+      # Sem isso este passo falha com "Get Pages site failed / Not Found".
+      # Nao da para automatizar: o GITHUB_TOKEN nao tem permissao para criar o
+      # site do Pages (`enablement: true` responde "Resource not accessible by
+      # integration"). Depois de ligado uma vez, nunca mais precisa mexer.
       - uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       - uses: actions/upload-pages-artifact@v3
         with:
