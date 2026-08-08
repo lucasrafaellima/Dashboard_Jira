@@ -1,0 +1,78 @@
+name: Sincronizar Jira e publicar snapshot
+
+# Puxa as issues do Jira e publica a base como um snapshot no Firestore, que e
+# de onde o site no GitHub Pages le os dados. E aqui que a sincronizacao vive
+# agora: o navegador nao pode falar com a API do Jira (CORS, e o token nao pode
+# sair do servidor), entao quem faz isso e este job.
+
+on:
+  schedule:
+    - cron: '0 */3 * * *'   # incremental, a cada 3h (UTC)
+    - cron: '0 4 * * 0'     # completa, domingo 04:00 UTC — ver nota abaixo
+  workflow_dispatch:
+    inputs:
+      completa:
+        description: 'Forçar sincronização completa'
+        type: boolean
+        default: false
+
+# Duas sincronizações ao mesmo tempo brigariam pelo mesmo SQLite.
+concurrency:
+  group: sincronizacao
+  cancel-in-progress: false
+
+jobs:
+  sincronizar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 24 de proposito: em 22.x o `node:sqlite` ainda exige
+      # --experimental-sqlite e o import quebra logo no primeiro require.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      # A base fica no cache entre execucoes so para preservar as marcas d'agua
+      # da tabela `sincronizacoes`, que sao o que torna a passada incremental.
+      # Perder o cache nao quebra nada: o passo abaixo detecta e faz completa.
+      - name: Restaurar base SQLite
+        uses: actions/cache/restore@v4
+        with:
+          path: db
+          key: jira-db-${{ github.run_id }}
+          restore-keys: jira-db-
+
+      - name: Sincronizar
+        env:
+          JIRA_URL: ${{ secrets.JIRA_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_TOKEN: ${{ secrets.JIRA_TOKEN }}
+          JIRA_PROJETOS: ${{ secrets.JIRA_PROJETOS }}
+        run: |
+          set -e
+          # A passada completa e a unica que remove da base as issues apagadas no
+          # Jira (removerAusentes). So incremental, para sempre, acumularia lixo.
+          if [ ! -f db/jira.db ] \
+             || [ "${{ inputs.completa }}" = "true" ] \
+             || [ "${{ github.event.schedule }}" = "0 4 * * 0" ]; then
+            echo "modo: completa"
+            node tools/sincronizar.js --completa
+          else
+            echo "modo: incremental"
+            node tools/sincronizar.js
+          fi
+
+      - name: Publicar snapshot no Firestore
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node tools/publicar-firestore.js
+
+      # `if: always()` para nao perder o progresso quando uma origem falha no meio.
+      - name: Guardar base SQLite
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: db
+          key: jira-db-${{ github.run_id }}

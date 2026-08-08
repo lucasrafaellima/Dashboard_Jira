@@ -1,6 +1,17 @@
 // Dashboard Jira — front-end vanilla, graficos em SVG escritos a mao.
+//
+// Roda em dois modos, decididos em `fonte.js` no boot:
+//   servidor — com `npm start` atras; o Node agrega e a tela tem tudo (config
+//              do Jira, upload de planilha, sincronizacao, exportacao .xlsx);
+//   publico  — GitHub Pages; login pelo Firebase, dados de um snapshot no
+//              Firestore, agregacao aqui mesmo, e so leitura.
+import { escolherFonte } from './fonte.js';
+import { DIMENSOES } from './filtros.js';
 
 const $ = (sel) => document.querySelector(sel);
+
+/** Preenchido no boot por `iniciar()`; ver fonte-api.js / fonte-firestore.js. */
+let fonte = null;
 
 const PALETA = ['#4472c4', '#e15759', '#70ad47', '#7c6bc4', '#4ec5d9', '#f0a22e', '#8c8c8c', '#2f6f9f', '#c0504d'];
 // rotulos canonicos produzidos pela padronizacao (src/normalizar.js)
@@ -37,9 +48,6 @@ const estado = {
   dados: null,
   origemJira: '',
 };
-
-/** Filtros em conjunto, na ordem em que aparecem na capa do relatório. */
-const DIMENSOES = ['espacos', 'epicos', 'responsaveis', 'tipos', 'status', 'prioridades'];
 
 // ------------------------------------------------------------ utilidades
 
@@ -656,35 +664,50 @@ function ligarSlicer(el, conjunto) {
 
 // ------------------------------------------------------------ carregamento
 
-function queryFiltros() {
-  const p = new URLSearchParams();
-  for (const dim of DIMENSOES) {
-    if (estado[dim].size) p.set(dim, [...estado[dim]].join('|'));
-  }
-  if (estado.de) p.set('de', estado.de);
-  if (estado.ate) p.set('ate', estado.ate);
-  if (estado.incluirCancelados) p.set('cancelados', '1');
-  return p.toString();
+/**
+ * Os filtros da tela como objeto. E esta a forma que as duas fontes recebem: a
+ * do servidor serializa em query string, a do Firestore repassa direto para o
+ * `metricas.js`. Um formato so, entao nao ha um parser para sair de sincronia.
+ */
+function filtrosAtuais() {
+  const f = {
+    de: estado.de || null,
+    ate: estado.ate || null,
+    incluirCancelados: estado.incluirCancelados,
+  };
+  for (const dim of DIMENSOES) f[dim] = [...estado[dim]];
+  return f;
 }
 
 /** Só esmaece o painel se a resposta passar disso — evita piscar no clique. */
 const ESPERA_ATE_ESMAECER_MS = 140;
 
 async function carregar() {
-  const qs = queryFiltros();
   const painel = $('#painel');
   const esmaecer = setTimeout(() => painel.classList.add('carregando'), ESPERA_ATE_ESMAECER_MS);
   try {
-    const [dash, detalhe] = await Promise.all([
-      fetch(`/api/dashboard?${qs}`).then((r) => r.json()),
-      fetch(`/api/itens?${qs}&limite=500`).then((r) => r.json()),
-    ]);
-    estado.dados = dash;
-    renderizar(dash, detalhe);
+    const { dashboard, detalhe, publicadoEm } = await fonte.carregarDados(filtrosAtuais());
+    estado.dados = dashboard;
+    renderizar(dashboard, detalhe);
+    if (publicadoEm) mostrarValidade(publicadoEm);
+  } catch (e) {
+    // no modo publico o "sem permissão" ja virou mensagem no portao
+    if (e?.message !== 'sem permissão') {
+      $('#resumo-base').textContent = `Não foi possível carregar: ${e.message}`;
+    }
   } finally {
     clearTimeout(esmaecer);
     painel.classList.remove('carregando');
   }
+}
+
+/** No modo publico o cabecalho mostra a validade do dado, nao a conexao ao Jira. */
+function mostrarValidade(quando) {
+  const etiqueta = $('#status-jira');
+  etiqueta.className = 'etiqueta';
+  etiqueta.textContent = `dados de ${quando.toLocaleString('pt-BR', {
+    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+  })}`;
 }
 
 function renderizar(d, detalhe) {
@@ -825,14 +848,8 @@ async function exportarExcel() {
   botao.textContent = 'Gerando…';
 
   try {
-    const r = await fetch(`/api/exportar?${queryFiltros()}`);
-    if (!r.ok) {
-      const erro = await r.json().catch(() => ({}));
-      throw new Error(erro.erro || `falha ao gerar a planilha (HTTP ${r.status})`);
-    }
-    const blob = await r.blob();
-    const nome = (r.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/)?.[1]
-      || 'atividades-jira.xlsx';
+    // servidor: .xlsx pronto do Node. Modo público: CSV gerado aqui.
+    const { blob, nome } = await fonte.exportar(filtrosAtuais());
 
     const link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
@@ -1134,7 +1151,13 @@ async function salvarJira() {
 
 // ------------------------------------------------------------ eventos
 
-function iniciar() {
+async function iniciar() {
+  // Primeira coisa: descobrir se ha backend. Tudo abaixo depende disso.
+  fonte = await escolherFonte();
+  document.body.classList.add(fonte.modo === 'publico' ? 'somente-leitura' : 'com-servidor');
+  $('#btn-excel').textContent = fonte.rotuloExportar;
+  $('#btn-excel').title = fonte.dicaExportar;
+
   ligarSlicer($('#slicer-espacos'), estado.espacos);
   ligarSlicer($('#slicer-epicos'), estado.epicos);
   ligarSlicer($('#slicer-responsaveis'), estado.responsaveis);
@@ -1200,6 +1223,8 @@ function iniciar() {
   });
 
   document.addEventListener('click', async (e) => {
+    // esconder o botão no CSS não impede um clique pelo devtools de chegar aqui
+    if (fonte.modo !== 'servidor') return;
     const btn = e.target.closest('[data-remover]');
     if (btn) {
       if (!confirm('Remover essa importação e todas as atividades que vieram dela?')) return;
@@ -1217,7 +1242,13 @@ function iniciar() {
     }
   });
 
-  carregar();
+  await carregar();
+
+  // Daqui para baixo é tudo /api/*. No modo público não existe backend: chamar
+  // isso encheria o console de 404 e deixaria o cabeçalho preso em
+  // "verificando conexão…" para sempre.
+  if (fonte.modo !== 'servidor') return;
+
   carregarConfigJira();
   // a sincronização automática roda no servidor; a tela só se pendura nela
   vigiarSincronizacaoDeFundo();

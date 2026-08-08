@@ -5,3 +5,13 @@ config/jira.json
 data/*.xlsx
 data/*.csv
 ~$*
+
+# chave da service account do Firebase — ela ignora o firestore.rules, entao no
+# repositorio ela vale mais que qualquer senha. Vive no GitHub Secrets.
+*serviceAccount*.json
+*service-account*.json
+*firebase-adminsdk*.json
+chave-firebase.json
+
+# pasta montada pelo workflow do GitHub Pages
+site/

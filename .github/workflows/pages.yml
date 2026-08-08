@@ -1,0 +1,53 @@
+name: Publicar no GitHub Pages
+
+# Monta e publica o site estatico. Aqui NAO vai dado nenhum: o site sobe vazio e
+# busca o snapshot no Firestore depois do login. Um site no GitHub Pages e
+# publico mesmo em repositorio privado, entao nada de embutir a base no artefato.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'public/**'
+      - 'src/metricas.js'
+      - 'src/normalizar.js'
+      - '.github/workflows/pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Montar o site
+        run: |
+          set -e
+          mkdir -p site/compartilhado
+          cp -r public/. site/
+          # os dois modulos puros que o navegador tambem roda. O mesmo caminho
+          # que o server.js serve em /compartilhado/, para o front nao precisar
+          # saber em qual dos dois modos esta.
+          cp src/metricas.js src/normalizar.js site/compartilhado/
+          touch site/.nojekyll
+          echo "Conteúdo publicado:"
+          find site -type f | sort
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploy
+        uses: actions/deploy-pages@v4

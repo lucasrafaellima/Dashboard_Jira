@@ -311,6 +311,36 @@ td.epico { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-sp
 }
 .btn-mini:hover { background: #fdeeee; }
 
+/* ---------------------------------------------- modos servidor / público
+
+   O front roda em dois modos (ver public/fonte.js). O boot marca o <body> com
+   `com-servidor` ou `somente-leitura` e o resto é só CSS: no site publicado
+   somem as ações que dependem do Node; rodando local somem as de login. */
+
+.somente-leitura .so-admin { display: none !important; }
+.com-servidor .so-publico { display: none !important; }
+
+/* ------------------------------------------------------------ portão de login */
+
+.portao {
+  position: fixed; inset: 0; z-index: 100;
+  background: var(--azul-escuro);
+  display: flex; align-items: center; justify-content: center; padding: 20px;
+}
+.portao.oculto { display: none; }
+.portao-caixa {
+  background: #fff; border-radius: 10px; padding: 32px;
+  width: min(420px, 100%); text-align: center;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .3);
+}
+.portao-caixa h1 { margin: 0 0 12px; color: var(--azul-escuro); font-size: 20px; }
+.portao-caixa p { margin: 0 0 20px; color: #444; font-size: 13px; line-height: 1.5; }
+.portao-caixa .btn { width: 100%; margin-top: 8px; }
+.portao-caixa .btn.oculto { display: none; }
+
+/* enquanto o portão está de pé, o painel atrás não rola */
+body.travado { overflow: hidden; }
+
 /* ------------------------------------------------------------ modal */
 
 .modal {
@@ -405,8 +435,11 @@ td.epico { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-sp
   html, body { background: #fff; font-size: 11px; }
 
   /* fora do relatorio: controles, modais e o que e operacao, nao analise */
-  .topo, .modal, .tabela-secao, .btn, .btn-mini,
+  .topo, .modal, .portao, .tabela-secao, .btn, .btn-mini,
   #secao-sincronizacoes, #secao-importacoes { display: none !important; }
+
+  /* o portão trava a rolagem na tela; na impressão isso cortaria o relatório */
+  body.travado { overflow: visible !important; }
 
   /* ---------------------------------------------------------- capa e rodape */
 

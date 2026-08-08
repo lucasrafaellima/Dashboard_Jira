@@ -278,14 +278,20 @@ src/xlsx-escrita.js    escritor .xlsx: XML da pasta de trabalho + zip com deflat
 src/normalizar.js      mapeamento de colunas, datas, status, espaços, pessoas
 src/ingestao.js        escolhe a aba, converte as linhas e grava
 src/banco.js           node:sqlite — tabelas itens, importacoes e sincronizacoes
-src/metricas.js        agregações do dashboard
+src/metricas.js        agregações do dashboard — JS puro, roda também no navegador
+src/metricas-banco.js  liga as métricas ao SQLite (é o que o server.js usa)
 tools/sincronizar.js   sincronização pela linha de comando
 tools/importar.js      importação em lote pela pasta data/
+tools/publicar-firestore.js  publica a base como snapshot no Firestore
 public/                index.html, styles.css, app.js (gráficos SVG)
+public/fonte.js        decide no boot: backend Node ou Firestore
+public/portao.js       login com Google (só no modo público)
+firestore.rules        quem pode ler o snapshot — a barreira de acesso de verdade
+.github/workflows/     sincronização por cron e publicação no GitHub Pages
 data/                  as planilhas que você foi adicionando
 db/jira.db             banco gerado
 .env                   suas credenciais (fora do Git)
-docs/                  guia de configuração do Jira
+docs/                  guias de configuração
 ```
 
 ### API
@@ -306,12 +312,105 @@ docs/                  guia de configuração do Jira
 | `POST /api/upload?nome=arq.xlsx` | corpo = binário do arquivo |
 | `DELETE /api/importacoes/:id` | remove um lote |
 | `POST /api/limpar` | zera a base |
+| `GET /api/saude` | só existe no servidor local; é como o front descobre que há backend |
+| `GET /compartilhado/metricas.js` | módulos puros que o navegador também executa |
+
+## Os dois modos
+
+O mesmo front roda de duas formas. Quem decide é `public/fonte.js`, no boot: ele
+chama `GET api/saude` e, se responder, usa o backend; se não, cai no Firestore.
+A escolha é por sondagem justamente para não existir um sinalizador que possa ser
+publicado errado.
+
+| | **servidor** (`npm start`) | **público** (GitHub Pages) |
+|---|---|---|
+| Dados | SQLite local, agregados no Node | snapshot do Firestore, agregado no navegador |
+| Login | nenhum (escuta em `127.0.0.1`) | conta Google + lista de permitidos |
+| Sincronizar / Configurar Jira / Planilha | sim | escondidos |
+| Exportar | `.xlsx` | `.csv` |
+| PDF, filtros, gráficos | sim | sim |
+
+As métricas são as **mesmas nos dois casos**: `src/metricas.js` não conhece banco
+nem rede, só recebe `{ itens, importacoes, sincronizacoes }`. No servidor quem
+monta isso é `src/metricas-banco.js`; no navegador, o snapshot baixado.
+
+### Publicar no GitHub Pages
+
+Uma vez, no console do Firebase (projeto `dashboard-81c66`):
+
+1. **Authentication → Sign-in method** → habilitar **Google**.
+2. **Authentication → Settings → Authorized domains** → adicionar
+   `lucasrafaellima.github.io`. Sem isso o login falha com `auth/unauthorized-domain`.
+3. **Firestore Database → Create database** → produção, região `southamerica-east1`.
+4. **Rules** → colar o `firestore.rules` deste repositório → *Publish*.
+5. Liberar quem vai usar: criar um documento em `permitidos/<e-mail em minúsculas>`
+   (o conteúdo não importa, pode ser vazio).
+6. **Project settings → Service accounts → Generate new private key** → guardar o
+   JSON no secret `FIREBASE_SERVICE_ACCOUNT` e **apagar o arquivo baixado**.
+
+No GitHub, em *Settings*:
+
+- **Pages → Source: GitHub Actions**.
+- **Secrets and variables → Actions**: `JIRA_URL`, `JIRA_EMAIL`, `JIRA_TOKEN`,
+  `JIRA_PROJETOS` e `FIREBASE_SERVICE_ACCOUNT`. Vale gerar um token do Jira
+  separado para o CI, para poder revogá-lo sem derrubar o uso local.
+- Rodar o workflow **Sincronizar Jira e publicar snapshot** na mão uma vez: o site
+  só serve para alguma coisa depois que existe um snapshot.
+
+#### A chave da service account
+
+Baixe em **Project settings → Service accounts → Generate new private key**
+([link direto](https://console.firebase.google.com/project/dashboard-81c66/settings/serviceaccounts/adminsdk)).
+Vem um `.json` com nome tipo `dashboard-81c66-firebase-adminsdk-a1b2c-3d4e5f.json`.
+
+Essa chave **ignora o `firestore.rules`** — quem a tem lê e escreve tudo. Ela não
+tem senha e o Firebase não mostra o conteúdo de novo; perdeu, gera outra e revoga
+a antiga no mesmo lugar. Guarde **fora do repositório** (ex.: `%USERPROFILE%\.firebase\`),
+para não depender do `.gitignore` estar certo.
+
+Para o GitHub Actions, o que vai no secret `FIREBASE_SERVICE_ACCOUNT` é o
+**conteúdo** do arquivo (abra e copie tudo, incluindo as chaves `{ }`), não o caminho.
+
+Publicar da sua máquina, sem esperar o cron:
+
+```powershell
+# PowerShell (Windows)
+npm run sync
+$env:FIREBASE_CHAVE = "$env:USERPROFILE\.firebase\chave.json"
+npm run publicar
+```
+
+```bash
+# bash / Git Bash / Linux / macOS
+npm run sync
+FIREBASE_CHAVE=~/.firebase/chave.json npm run publicar
+```
+
+### Testar o modo público localmente
+
+`npm start` sempre entra em modo servidor, porque `api/saude` responde. Para ver a
+tela de login e o caminho do Firestore sem publicar nada, sirva a pasta `public/`
+por qualquer estático (aí não há `api/saude` e a sondagem cai no modo público) —
+lembrando de copiar `src/metricas.js` e `src/normalizar.js` para `compartilhado/`,
+que é o que o workflow do Pages faz.
 
 ## Segurança
 
-O servidor guarda o token do Jira, então por padrão escuta **só em `127.0.0.1`**.
-Para abrir na rede local: `HOST=0.0.0.0 npm start` — ciente de que qualquer pessoa
-da rede poderá disparar sincronizações. O token nunca é enviado ao navegador.
+No modo servidor, o processo guarda o token do Jira, então por padrão escuta **só
+em `127.0.0.1`**. Para abrir na rede local: `HOST=0.0.0.0 npm start` — ciente de
+que qualquer pessoa da rede poderá disparar sincronizações. O token nunca é
+enviado ao navegador.
+
+No modo público vale entender o que protege o quê. **Um site no GitHub Pages é
+sempre alcançável por qualquer um**, inclusive em repositório privado. A tela de
+login é conveniência; a barreira de verdade é o `firestore.rules` — nenhum dado é
+buscado antes do login e, para quem não está em `permitidos/`, a leitura volta
+`permission-denied`. Por isso o artefato publicado **não contém dado nenhum**: o
+site sobe vazio e busca o snapshot depois de autenticar.
+
+A `apiKey` do Firebase em `public/firebase-config.js` pode ficar no repositório —
+ela identifica o projeto, não autoriza nada. Já a **chave da service account**
+ignora as regras do Firestore: essa vive só no GitHub Secrets, nunca no Git.
 
 ## Limitações
 

@@ -1,0 +1,58 @@
+// Regras do Firestore do Dashboard Jira.
+//
+// O site no GitHub Pages e publico — qualquer um alcanca a URL. O portao de
+// login na tela e so conforto; a fronteira de verdade e este arquivo.
+//
+// Publicar: console do Firebase -> Firestore Database -> Rules -> colar -> Publish.
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{banco}/documents {
+
+    // E-mail da sessao, em minusculas, e so se o provedor confirmou o endereco.
+    // Sem o email_verified, um provedor que aceite e-mail nao verificado deixaria
+    // alguem se passar por um endereco da lista.
+    function email() {
+      return request.auth != null
+             && request.auth.token.email != null
+             && request.auth.token.email_verified == true
+             ? request.auth.token.email.lower()
+             : null;
+    }
+
+    function liberado() {
+      return email() != null
+             && exists(/databases/$(banco)/documents/permitidos/$(email()));
+    }
+
+    // Lista de autorizados. O ID do documento e o e-mail em minusculas; o
+    // conteudo nao importa (pode ser vazio).
+    // Cada pessoa so consegue ler o proprio registro: `list` fica bloqueado para
+    // que ninguem baixe a lista inteira de quem tem acesso.
+    match /permitidos/{quem} {
+      allow get: if request.auth != null
+                 && request.auth.token.email != null
+                 && request.auth.token.email.lower() == quem;
+      allow list, write: if false;
+    }
+
+    // Snapshot do painel: leitura para quem esta na lista, escrita para ninguem.
+    // Quem publica e a GitHub Action, com uma service account — credencial de
+    // servidor ignora estas regras, entao `allow write: if false` nao a atrapalha.
+    match /painel/{doc} {
+      allow get: if liberado();
+      allow list, write: if false;
+
+      // Partes do snapshot, usadas so se um dia ele passar de 1 MiB.
+      match /partes/{parte} {
+        allow get, list: if liberado();
+        allow write: if false;
+      }
+    }
+
+    // Todo o resto: fechado.
+    match /{documento=**} {
+      allow read, write: if false;
+    }
+  }
+}

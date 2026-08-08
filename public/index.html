@@ -8,6 +8,18 @@
 </head>
 <body>
 
+<!-- Portão de login do modo público. Fica escondido quando há servidor local.
+     Não é a barreira de segurança: quem impede a leitura dos dados por quem não
+     tem acesso é o firestore.rules. Ver public/portao.js. -->
+<div id="portao" class="portao oculto">
+  <div class="portao-caixa">
+    <h1>Dashboard Jira</h1>
+    <p id="portao-msg">Verificando sessão…</p>
+    <button id="btn-entrar" class="btn oculto">Entrar com Google</button>
+    <button id="portao-sair" class="btn secundario oculto">Sair e trocar de conta</button>
+  </div>
+</div>
+
 <header class="topo">
   <div class="titulo">
     <h1>Dashboard Jira</h1>
@@ -21,10 +33,12 @@
     <input type="date" id="de" title="Período — a partir de. Entram as atividades criadas OU concluídas nesse intervalo.">
     <input type="date" id="ate" title="Período — até. Entram as atividades criadas OU concluídas nesse intervalo.">
     <button id="btn-limpar-filtros" class="btn secundario">Limpar filtros</button>
-    <button id="btn-sincronizar" class="btn" title="Buscar no Jira o que mudou desde a última sincronização">⟳ Sincronizar Jira</button>
-    <button id="btn-config-jira" class="btn secundario">Configurar Jira</button>
-    <button id="btn-importar" class="btn secundario" title="Alternativa: subir uma planilha exportada do Jira">Planilha</button>
+    <button id="btn-sincronizar" class="btn so-admin" title="Buscar no Jira o que mudou desde a última sincronização">⟳ Sincronizar Jira</button>
+    <button id="btn-config-jira" class="btn secundario so-admin">Configurar Jira</button>
+    <button id="btn-importar" class="btn secundario so-admin" title="Alternativa: subir uma planilha exportada do Jira">Planilha</button>
     <button id="btn-pdf" class="btn secundario">PDF</button>
+    <span id="usuario" class="etiqueta so-publico oculto"></span>
+    <button id="btn-sair" class="btn secundario so-publico oculto">Sair</button>
   </div>
 </header>
 
@@ -199,7 +213,7 @@
     </div>
   </section>
 
-  <section id="secao-importacoes" class="cartao">
+  <section id="secao-importacoes" class="cartao so-admin">
     <h2>Planilhas importadas <span class="sub">— opcional, para dados que não vêm da API</span></h2>
     <div class="rolagem baixa">
       <table id="tabela-importacoes">
@@ -217,7 +231,7 @@
   <span id="rodape-detalhe"></span>
 </footer>
 
-<div id="modal-jira" class="modal oculto">
+<div id="modal-jira" class="modal oculto so-admin">
   <div class="modal-caixa larga">
     <h2>Conexão com o Jira</h2>
     <p class="ajuda">
@@ -267,7 +281,7 @@
   </div>
 </div>
 
-<div id="modal" class="modal oculto">
+<div id="modal" class="modal oculto so-admin">
   <div class="modal-caixa">
     <h2>Adicionar planilhas do Jira</h2>
     <p class="ajuda">

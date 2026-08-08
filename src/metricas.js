@@ -1,5 +1,8 @@
 // Agregacoes que alimentam o dashboard.
-import { listarItens, listarImportacoes, listarSincronizacoes } from './banco.js';
+// Este modulo e puro de proposito: nao conhece banco, disco nem rede. Os dados
+// chegam prontos pela `fonte`, um objeto { itens, importacoes, sincronizacoes }.
+// No servidor quem monta a fonte e `fonte-node.js` (le do SQLite); no navegador
+// e o snapshot baixado do Firestore. Assim o mesmo motor roda nos dois lados.
 import {
   ehConcluida, SEM_RESPONSAVEL, ORDEM_PRIORIDADE, CATEGORIAS, SEM_EPICO, rotuloEpico,
   dataDeConclusao,
@@ -414,10 +417,14 @@ function ordenarResponsaveis(lista) {
   });
 }
 
-/** Monta o payload completo do dashboard. */
-export function montarDashboard(filtros = {}) {
+/**
+ * Monta o payload completo do dashboard.
+ * @param fonte  { itens, importacoes, sincronizacoes } — ver `metricas-banco.js`
+ * @param filtros recortes da tela (periodo, responsaveis, status, epicos…)
+ */
+export function montarDashboard(fonte, filtros = {}) {
   const incluirCancelados = !!filtros.incluirCancelados;
-  const todos = listarItens();
+  const todos = fonte.itens;
   const base = aplicarRecortes(todos, filtros);
   const {
     criadas, concluidas, criadasEConcluidas, universo: itens,
@@ -425,7 +432,7 @@ export function montarDashboard(filtros = {}) {
 
   const total = criadas.length;
   const datas = itens.map((it) => it.criado).filter(Boolean).sort();
-  const importacoes = listarImportacoes(20);
+  const importacoes = fonte.importacoes;
 
   // cada gráfico é também um filtro, então cada um ignora o próprio recorte
   const semDim = (dim, contar) => porDimensao(todos, filtros, incluirCancelados, dim, contar);
@@ -513,14 +520,14 @@ export function montarDashboard(filtros = {}) {
     periodo: { inicio: datas[0] ?? null, fim: datas[datas.length - 1] ?? null },
     baseTotal: todos.length,
     importacoes,
-    sincronizacoes: listarSincronizacoes(),
+    sincronizacoes: fonte.sincronizacoes,
     geradoEm: new Date().toISOString(),
   };
 }
 
 /** Lista detalhada para a tabela do rodape (e para a exportacao em .xlsx). */
-export function listarDetalhe(filtros = {}, limite = 500) {
-  const base = aplicarRecortes(listarItens(), filtros);
+export function listarDetalhe(fonte, filtros = {}, limite = 500) {
+  const base = aplicarRecortes(fonte.itens, filtros);
   // mesmo universo dos indicadores: criadas no periodo + concluidas no periodo.
   // Assim a atividade de julho que fechou em agosto aparece aqui no recorte de
   // agosto, e o total da tabela bate com os cartoes de cima.

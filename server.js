@@ -8,7 +8,7 @@ import {
   listarSincronizacoes, removerSincronizacao,
 } from './src/banco.js';
 import { importarArquivo } from './src/ingestao.js';
-import { montarDashboard, listarDetalhe } from './src/metricas.js';
+import { montarDashboard, listarDetalhe } from './src/metricas-banco.js';
 import { lerConfig, configPublica, salvarConfig } from './src/config.js';
 import { verificarConexao, listarProjetos } from './src/jira.js';
 import { sincronizar } from './src/sincronizacao.js';
@@ -22,6 +22,10 @@ const PORTA = Number(process.env.PORT) || 3000;
 // maquina. Para expor na rede local: HOST=0.0.0.0 npm start
 const HOST = process.env.HOST || '127.0.0.1';
 const LIMITE_UPLOAD = 40 * 1024 * 1024;
+// Lista fechada: so estes arquivos de `src/` podem sair pela rota
+// /compartilhado/. Sem isso a rota viraria leitura livre de `src/`, onde moram
+// o cliente do Jira e a configuracao com o token.
+const COMPARTILHADOS = new Set(['metricas.js', 'normalizar.js']);
 
 const TIPOS = {
   '.html': 'text/html; charset=utf-8',
@@ -250,6 +254,12 @@ const servidor = createServer(async (req, res) => {
   const rota = url.pathname;
 
   try {
+    // Como o front descobre que existe um backend atras dele. No GitHub Pages
+    // esta rota nao existe, a sondagem falha e a tela cai no modo publico.
+    if (rota === '/api/saude' && req.method === 'GET') {
+      return json(res, 200, { ok: true, modo: 'servidor' });
+    }
+
     if (rota === '/api/dashboard' && req.method === 'GET') {
       return json(res, 200, montarDashboard(lerFiltros(url)));
     }
@@ -375,6 +385,16 @@ const servidor = createServer(async (req, res) => {
     }
 
     if (rota.startsWith('/api/')) return json(res, 404, { erro: 'Rota não encontrada.' });
+
+    // Modulos puros de `src/` que o navegador tambem executa no modo publico.
+    // Servidos no mesmo caminho que a build do GitHub Pages usa, para dar para
+    // testar o modo publico aqui mesmo, sem publicar nada.
+    if (rota.startsWith('/compartilhado/')) {
+      const nome = rota.slice('/compartilhado/'.length);
+      if (!COMPARTILHADOS.has(nome)) return json(res, 404, { erro: 'Módulo não compartilhado.' });
+      res.writeHead(200, { 'Content-Type': TIPOS['.js'] });
+      return res.end(await readFile(join(RAIZ, 'src', nome)));
+    }
 
     return await servirEstatico(req, res, rota);
   } catch (e) {
