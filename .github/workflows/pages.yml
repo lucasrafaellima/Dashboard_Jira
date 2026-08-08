@@ -45,7 +45,13 @@ jobs:
           echo "Conteúdo publicado:"
           find site -type f | sort
 
+      # `enablement: true` faz a action criar o site do Pages se ele ainda nao
+      # existir, em vez de falhar com "Get Pages site failed / Not Found". Assim
+      # nao ha um passo manual em Settings -> Pages para lembrar.
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
