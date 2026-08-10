@@ -47,10 +47,60 @@ jobs:
 
       # PRE-REQUISITO, uma vez por repositorio:
       #   Settings -> Pages -> Build and deployment -> Source: GitHub Actions
-      # Sem isso este passo falha com "Get Pages site failed / Not Found".
-      # Nao da para automatizar: o GITHUB_TOKEN nao tem permissao para criar o
-      # site do Pages (`enablement: true` responde "Resource not accessible by
-      # integration"). Depois de ligado uma vez, nunca mais precisa mexer.
+      #
+      # Com a origem em "Deploy from a branch" o site NAO quebra — ele fica pior
+      # que isso: o Jekyll do proprio GitHub monta o README como se fosse o site
+      # e publica DEPOIS deste workflow, marcando o nosso deploy como `inactive`.
+      # Os dois pipelines escrevem no mesmo ambiente e o ultimo ganha. O
+      # resultado e um workflow verde publicando um site que ninguem ve: quem
+      # abre o link cai no README.
+      #
+      # Por isso a origem e conferida antes do deploy, e o job falha de proposito
+      # quando ela esta errada — melhor um X vermelho com a instrucao do que um
+      # sucesso mentiroso.
+      - name: Conferir a origem do Pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          origem() { gh api "repos/$GITHUB_REPOSITORY/pages" --jq .build_type 2>/dev/null || true; }
+          atual=$(origem)
+
+          # sem permissao para ler a configuracao: avisa e segue, porque falhar
+          # aqui derrubaria uma publicacao que talvez esteja certa
+          if [ -z "$atual" ]; then
+            echo "::warning::Não deu para ler a origem do Pages (token sem permissão). Seguindo."
+            exit 0
+          fi
+          if [ "$atual" = workflow ]; then
+            echo "Origem do Pages: GitHub Actions — é o que este workflow precisa."
+            exit 0
+          fi
+
+          # tentativa de conserto automatico. Costuma falhar: trocar a origem pede
+          # `administration:write`, que o GITHUB_TOKEN não tem. Custa uma chamada
+          # e evita a viagem ao painel quando o repositorio permite.
+          echo "Origem do Pages: '$atual'. Tentando trocar para 'workflow'..."
+          gh api -X PUT "repos/$GITHUB_REPOSITORY/pages" -f build_type=workflow >/dev/null 2>&1 || true
+          if [ "$(origem)" = workflow ]; then
+            echo "Trocada para GitHub Actions."
+            exit 0
+          fi
+
+          # a anotacao vermelha do topo cabe numa linha so; o resto vai no log
+          echo "::error::Pages está em '$atual' (Deploy from a branch): o link abre o README. Troque a origem para GitHub Actions em Settings -> Pages."
+          cat >&2 <<FIM
+
+          Com a origem em '$atual', o Jekyll do GitHub publica o README por cima
+          deste workflow e o dashboard nunca aparece. Trocar é uma vez só:
+
+            https://github.com/$GITHUB_REPOSITORY/settings/pages
+            Build and deployment -> Source -> GitHub Actions
+
+          Feito isso, rode este workflow de novo (Actions -> Publicar no GitHub
+          Pages -> Run workflow) e o link passa a abrir o sistema.
+          FIM
+          exit 1
+
       - uses: actions/configure-pages@v5
 
       - uses: actions/upload-pages-artifact@v3

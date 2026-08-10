@@ -361,12 +361,35 @@ Uma vez, no console do Firebase (projeto `dashboard-81c66`):
 
 No GitHub, em *Settings*:
 
-- **Pages → Source: GitHub Actions**.
+- **Pages → Source: GitHub Actions** ([link direto](https://github.com/lucasrafaellima/Dashboard_Jira/settings/pages)).
+  Não é detalhe: veja [o link abre o README](#o-link-do-pages-abre-o-readme-em-vez-do-sistema).
 - **Secrets and variables → Actions**: `JIRA_URL`, `JIRA_EMAIL`, `JIRA_TOKEN`,
   `JIRA_PROJETOS` e `FIREBASE_SERVICE_ACCOUNT`. Vale gerar um token do Jira
   separado para o CI, para poder revogá-lo sem derrubar o uso local.
 - Rodar o workflow **Sincronizar Jira e publicar snapshot** na mão uma vez: o site
   só serve para alguma coisa depois que existe um snapshot.
+
+#### O link do Pages abre o README em vez do sistema
+
+Sintoma: `https://lucasrafaellima.github.io/Dashboard_Jira/` mostra o README
+formatado, e o workflow **Publicar no GitHub Pages** está verde.
+
+Causa: a origem do Pages está em **Deploy from a branch**. Aí existem *dois*
+publicadores disputando o mesmo endereço — o workflow deste repositório e o
+Jekyll que o GitHub roda sozinho a cada push na branch. Os dois escrevem no
+ambiente `github-pages` e **o último ganha**; o Jekyll termina depois e marca o
+nosso deploy como `inactive`. Como o repositório não tem `index.html` na raiz, o
+que o Jekyll publica é o README.
+
+Correção, uma vez só:
+
+1. **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+2. **Actions → Publicar no GitHub Pages → Run workflow**.
+
+O workflow confere isso antes de publicar: com a origem errada ele tenta trocar
+sozinho (quase sempre não pode — trocar exige `administration:write`, que o
+`GITHUB_TOKEN` não tem) e então **falha de propósito**, com o passo a passo no
+log. Um X vermelho aqui vale mais que um verde publicando um site que ninguém vê.
 
 #### A chave da service account
 
