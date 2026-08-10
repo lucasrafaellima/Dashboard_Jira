@@ -96,6 +96,15 @@ const DIA_MS = 86400000;
 /** Quantas semanas o comparativo mostra, contando a atual. */
 const SEMANAS_COMPARADAS = 8;
 
+/**
+ * Teto de semanas quando a janela sai do filtro de datas.
+ *
+ * Um recorte de dois anos viraria 100 barras de 7px com o rotulo de cada uma
+ * por cima da outra — ilegivel. Passando disso o cartao mantem as ultimas
+ * semanas do intervalo e avisa na nota que recortou.
+ */
+const MAX_SEMANAS_FILTRADAS = 26;
+
 const soDia = (iso) => String(iso).slice(0, 10);
 const somarDias = (dia, n) => new Date(Date.parse(`${dia}T00:00:00Z`) + n * DIA_MS)
   .toISOString().slice(0, 10);
@@ -156,18 +165,99 @@ function distribuirPorSemana(eventos, { inicios, posicao, ultima, limiteAnterior
   return { pessoas, totais };
 }
 
+/** Quantos dias separam dois dias "aaaa-mm-dd" (b - a). */
+const distanciaEmDias = (a, b) => Math.round(
+  (Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / DIA_MS,
+);
+
+/**
+ * Decide **de quando ate quando** o cartao fala.
+ *
+ * Sao dois modos, e o filtro de datas da tela escolhe qual vale:
+ *
+ *   - **sem filtro de datas**: a janela e um rabo fixo de N semanas terminando
+ *     na semana de hoje. Numa base parada (sem sincronizacao ha um mes) isso
+ *     deixaria o cartao inteiro zerado, entao ela desliza para a ultima semana
+ *     com entrega — ao menos essa tem o que comparar.
+ *   - **com filtro de datas**: a janela vira o proprio intervalo, das semanas
+ *     que ele toca. E o que se espera ao recortar um periodo: o cartao passa a
+ *     falar dele, e nao das ultimas oito semanas independente do recorte.
+ *
+ * `primeiroDia`/`ultimoDia` sao as bordas reais do que esta sendo contado (o
+ * intervalo pode comecar numa quarta e terminar numa quinta): e por eles que se
+ * sabe quais semanas das pontas estao pela metade.
+ */
+function janelaDeSemanas(eventos, { de: dePleno, ate: atePleno, semanas }) {
+  const hoje = new Date().toISOString().slice(0, 10);
+  const semanaDeHoje = inicioDaSemana(hoje);
+  // o filtro chega como "aaaa-mm-dd", mas uma data cheia nao pode virar
+  // comparacao de string com o dia solto de `ultimoDia`
+  const de = dePleno ? soDia(dePleno) : null;
+  const ate = atePleno ? soDia(atePleno) : null;
+
+  if (de || ate) {
+    // amanha nao tem conclusao: o "ate" no futuro para em hoje. Ja um intervalo
+    // inteiro no futuro (raro, mas o campo aceita) vira a semana do "de"
+    let ultimoDia = ate && ate < hoje ? ate : hoje;
+    if (de && de > ultimoDia) ultimoDia = de;
+
+    const fim = inicioDaSemana(ultimoDia);
+    let primeira = de ? inicioDaSemana(de) : somarDias(fim, -7 * (semanas - 1));
+    let quantas = distanciaEmDias(primeira, fim) / 7 + 1;
+    const truncada = quantas > MAX_SEMANAS_FILTRADAS;
+    if (truncada) {
+      quantas = MAX_SEMANAS_FILTRADAS;
+      primeira = somarDias(fim, -7 * (quantas - 1));
+    }
+
+    return {
+      inicios: Array.from({ length: quantas }, (_, i) => somarDias(primeira, 7 * i)),
+      // com a janela truncada a primeira borda e a da semana, nao a do filtro
+      primeiroDia: de && de > primeira ? de : primeira,
+      ultimoDia,
+      emCurso: fim === semanaDeHoje,
+      filtrada: true,
+      truncada,
+    };
+  }
+
+  const maisRecente = eventos.reduce((m, e) => (e.dia > m ? e.dia : m), '');
+  let ancora = semanaDeHoje;
+  if (maisRecente) {
+    const semanaDoDado = inicioDaSemana(maisRecente);
+    const primeira = somarDias(semanaDeHoje, -7 * (semanas - 1));
+    if (semanaDoDado > ancora || semanaDoDado < primeira) ancora = semanaDoDado;
+  }
+  const emCurso = ancora === semanaDeHoje;
+  const inicios = Array.from({ length: semanas }, (_, i) => somarDias(ancora, -7 * (semanas - 1 - i)));
+
+  return {
+    inicios,
+    primeiroDia: inicios[0],
+    // a janela que recuou termina na semana fechada; a de hoje termina hoje
+    ultimoDia: emCurso ? hoje : somarDias(ancora, 6),
+    emCurso,
+    filtrada: false,
+    truncada: false,
+  };
+}
+
 /**
  * Produtividade semanal por colaborador — quantas atividades cada um concluiu
- * em cada uma das ultimas semanas, com o comparativo contra a semana anterior.
+ * em cada uma das semanas da janela, com o comparativo contra a anterior.
  *
- * Tres decisoes que mudam o numero e por isso ficam explicitas:
+ * Quatro decisoes que mudam o numero e por isso ficam explicitas:
  *
- *   - **a semana em curso e parcial**. Comparar uma terca-feira com uma semana
- *     inteira acusaria queda de 60% toda segunda. Quando a ultima semana ainda
- *     esta correndo, a comparacao e contra o **mesmo trecho** da semana passada
- *     (do inicio ate o mesmo dia da semana) — e isso que `comparavel` guarda.
- *     `anterior` continua trazendo a semana passada fechada, para quem quiser o
- *     numero cheio.
+ *   - **a janela segue o filtro de datas**. Recortou um periodo, o cartao passa
+ *     a falar so dele (ver `janelaDeSemanas`). Sem recorte, o rabo padrao de
+ *     oito semanas.
+ *   - **semana pela metade e comparada pela metade**. Comparar uma terca-feira
+ *     com uma semana inteira acusaria queda de 60% toda segunda. Quando a
+ *     ultima semana da janela nao esta fechada — porque ainda esta correndo ou
+ *     porque o filtro cortou no meio dela — a comparacao e contra o **mesmo
+ *     trecho** da semana anterior (do inicio ate o mesmo dia da semana), e e
+ *     isso que `comparavel` guarda. `anterior` continua trazendo a semana
+ *     anterior cheia, para quem quiser o numero fechado.
  *   - **conclusao e o que conta**. Produtividade aqui e entrega, entao o item
  *     entra na semana em que foi concluido (ver `dataDeConclusao`), nao na
  *     semana em que nasceu.
@@ -181,34 +271,21 @@ function distribuirPorSemana(eventos, { inicios, posicao, ultima, limiteAnterior
  *
  * @param {object[]} concluidas concluidas ignorando o filtro de responsaveis
  * @param {object[]} [concluidasDoFiltro] concluidas respeitando esse filtro
- * @param {number} [semanas] tamanho da janela, contando a semana atual
+ * @param {object} [opcoes] `{ de, ate }` do filtro de datas e tamanho da janela
  */
-function produtividadeSemanal(concluidas, concluidasDoFiltro = concluidas, semanas = SEMANAS_COMPARADAS) {
-  const hoje = new Date().toISOString().slice(0, 10);
+function produtividadeSemanal(concluidas, concluidasDoFiltro = concluidas, opcoes = {}) {
+  const { de = null, ate = null, semanas = SEMANAS_COMPARADAS } = opcoes;
   const eventos = eventosDeConclusao(concluidas);
 
-  // A janela normalmente termina na semana de hoje. Numa base parada (sem
-  // sincronizacao ha um mes) ou num recorte historico, isso deixaria o cartao
-  // inteiro zerado: nesse caso ela desliza para a ultima semana com entrega,
-  // que ao menos tem o que comparar. `emCurso` diz qual dos dois aconteceu.
-  const maisRecente = eventos.reduce((m, e) => (e.dia > m ? e.dia : m), '');
-  const semanaDeHoje = inicioDaSemana(hoje);
-  let ancora = semanaDeHoje;
-  if (maisRecente) {
-    const semanaDoDado = inicioDaSemana(maisRecente);
-    const primeira = somarDias(semanaDeHoje, -7 * (semanas - 1));
-    if (semanaDoDado > ancora || semanaDoDado < primeira) ancora = semanaDoDado;
-  }
-  const emCurso = ancora === semanaDeHoje;
-
-  const inicios = Array.from({ length: semanas }, (_, i) => somarDias(ancora, -7 * (semanas - 1 - i)));
+  const {
+    inicios, primeiroDia, ultimoDia, emCurso, filtrada, truncada,
+  } = janelaDeSemanas(eventos, { de, ate, semanas });
   const posicao = new Map(inicios.map((s, i) => [s, i]));
-  const ultima = semanas - 1;
+  const ultima = inicios.length - 1;
 
-  // dias ja corridos da semana atual (1 = segunda-feira); a semana fechada vale 7
-  const decorridos = emCurso
-    ? Math.round((Date.parse(`${hoje}T00:00:00Z`) - Date.parse(`${ancora}T00:00:00Z`)) / DIA_MS) + 1
-    : 7;
+  // dias ja cobertos da ultima semana (1 = so a segunda-feira); 7 = semana cheia
+  const decorridos = Math.min(7, Math.max(1, distanciaEmDias(inicios[ultima], ultimoDia) + 1));
+  const parcial = decorridos < 7;
   // limite (exclusivo) do trecho equivalente na semana anterior
   const limiteAnterior = ultima > 0 ? somarDias(inicios[ultima - 1], decorridos) : null;
 
@@ -224,7 +301,7 @@ function produtividadeSemanal(concluidas, concluidasDoFiltro = concluidas, seman
   const colaboradores = [...pessoas.values()].map((r) => {
     const atual = r.serie[ultima];
     const anterior = ultima > 0 ? r.serie[ultima - 1] : 0;
-    const comparavel = emCurso ? r.ateAqui : anterior;
+    const comparavel = parcial ? r.ateAqui : anterior;
     const anteriores = r.serie.slice(0, ultima);
     return {
       rotulo: r.rotulo,
@@ -252,17 +329,21 @@ function produtividadeSemanal(concluidas, concluidasDoFiltro = concluidas, seman
   const noRecorte = [...recorte.pessoas.values()];
   const atual = totais[ultima];
   const anterior = ultima > 0 ? totais[ultima - 1] : 0;
-  const comparavel = emCurso ? somar(noRecorte.map((p) => p.ateAqui)) : anterior;
+  const comparavel = parcial ? somar(noRecorte.map((p) => p.ateAqui)) : anterior;
   const ativos = noRecorte.filter((p) => p.serie[ultima] > 0).length;
 
   return {
-    semanas: inicios.map((inicio, i) => ({
-      inicio,
-      fim: somarDias(inicio, 6),
-      total: totais[i],
-      // a ultima barra pode estar pela metade: o grafico marca isso
-      parcial: i === ultima && emCurso && decorridos < 7,
-    })),
+    semanas: inicios.map((inicio, i) => {
+      const fim = somarDias(inicio, 6);
+      return {
+        inicio,
+        fim,
+        total: totais[i],
+        // barra pela metade: ou a semana ainda corre, ou o filtro cortou ela no
+        // meio. O grafico pinta essas mais claras para nao lerem como queda
+        parcial: inicio < primeiroDia || fim > ultimoDia,
+      };
+    }),
     colaboradores,
     resumo: {
       atual,
@@ -275,9 +356,19 @@ function produtividadeSemanal(concluidas, concluidasDoFiltro = concluidas, seman
       ativos,
       porColaborador: ativos ? +(atual / ativos).toFixed(1) : 0,
       emCurso,
+      parcial,
       decorridos,
       inicio: inicios[ultima],
       fim: somarDias(inicios[ultima], 6),
+      // Sem base de comparacao em dois casos, e nos dois a tela mostra "—" em
+      // vez de inventar "+100%" contra o zero: o intervalo cabe numa semana so,
+      // ou a semana anterior entra cortada pela borda do intervalo — comparar
+      // uma semana com tres dias da anterior acusaria alta de qualquer jeito.
+      semComparacao: ultima === 0 || inicios[ultima - 1] < primeiroDia,
+      filtrada,
+      truncada,
+      primeiroDia,
+      ultimoDia,
     },
   };
 }
@@ -501,19 +592,20 @@ export function montarDashboard(fonte, filtros = {}) {
       'responsaveis', (c) => ordenarResponsaveis(contarPor(c.criadas, 'responsavel')),
     ),
     serieMensal: serieMensal(semData.criadas, semData.concluidas),
-    // O filtro de **datas** nao vale aqui, nos dois conjuntos: as semanas ja sao
-    // o recorte, e com um mes filtrado sobrariam 4 semanas — sem historico para
-    // comparar. Ja o de **responsaveis** vale so no segundo: o ranking (1o) traz
-    // todo mundo, porque e por ele que se troca a selecao; os totais por semana
-    // e o resumo (2o) seguem quem estiver selecionado. Espaco, epico, tipo e
-    // prioridade continuam valendo nos dois.
+    // O filtro de **datas** vale aqui nos dois conjuntos, e a janela de semanas
+    // passa a ser o proprio intervalo (ver `janelaDeSemanas`) — sem recorte, o
+    // rabo padrao de oito semanas. Ja o de **responsaveis** vale so no segundo:
+    // o ranking (1o) traz todo mundo, porque e por ele que se troca a selecao;
+    // os totais por semana e o resumo (2o) seguem quem estiver selecionado.
+    // Espaco, epico, tipo e prioridade continuam valendo nos dois.
     produtividadeSemanal: produtividadeSemanal(
       separarPorPeriodo(
         aplicarRecortes(todos, { ...filtros, responsaveis: [] }),
-        { ...filtros, de: null, ate: null },
+        filtros,
         incluirCancelados,
       ).concluidas,
-      semData.concluidas,
+      concluidas,
+      { de: filtros.de ?? null, ate: filtros.ate ?? null },
     ),
     tempoDeConclusao: tempoDeConclusao(concluidas),
     padronizacao: padronizacaoAplicada(itens),

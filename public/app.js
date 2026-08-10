@@ -388,7 +388,9 @@ function faiscaSemanal(serie, semanas) {
   const L = 108, A = 22;
   const max = Math.max(1, ...serie);
   const passo = L / serie.length;
-  const larg = Math.max(2, passo - 2.5);
+  // com o periodo filtrado a janela pode ter duas ou tres semanas: sem o teto,
+  // a "faisca" viraria um bloco de 50px que nao parece um grafico de ritmo
+  const larg = Math.min(12, Math.max(2, passo - 2.5));
 
   const barras = serie
     .map((v, i) => {
@@ -442,10 +444,17 @@ function renderizarProdutividade(p) {
   const { resumo, semanas, colaboradores } = p;
   const atual = semanas[semanas.length - 1];
 
-  // quando a semana ainda está correndo, a comparação é contra o mesmo trecho
-  // da semana passada — senão toda segunda-feira pareceria um desabamento
-  const parcial = resumo.emCurso && resumo.decorridos < 7;
-  const rotuloBase = parcial ? 'mesmo trecho da semana passada' : 'semana anterior';
+  // quando a última semana não fechou — ou porque ainda está correndo, ou porque
+  // o filtro de datas cortou no meio dela — a comparação é contra o mesmo trecho
+  // da semana anterior; senão toda segunda-feira pareceria um desabamento
+  const parcial = resumo.parcial ?? (resumo.emCurso && resumo.decorridos < 7);
+  const rotuloBase = parcial ? 'mesmo trecho da semana anterior' : 'semana anterior';
+
+  // um período curto cabe numa semana só: sem semana anterior na janela não há
+  // variação nem média, e "▲ novo" contra o zero mentiria
+  const semBase = !!resumo.semComparacao;
+  const traco = '<span class="variacao estavel">—</span>';
+  const variacao = (v, d) => (semBase ? traco : pilulaVariacao(v, d));
 
   // os indicadores e o gráfico ao lado seguem o responsável selecionado; só o
   // ranking abaixo ignora essa seleção. Dizer de quem é o número evita ler o
@@ -458,22 +467,28 @@ function renderizarProdutividade(p) {
     + (parcial ? ` (${resumo.decorridos} de 7 dias corridos)` : '')
     + (recorte ? ` · indicadores de ${recorte}` : '');
 
+  // com o período filtrado a "semana atual" é a última do intervalo, não a de hoje
   const dequem = recorte || 'toda a equipe';
+  const daSemana = resumo.filtrada ? 'na última semana do período' : 'na semana atual';
+  const semJanela = semanas.length === 1
+    ? 'O período filtrado cabe numa única semana: não há semana anterior na janela.'
+    : 'O período filtrado corta a semana anterior pela metade: sem base cheia, não dá para comparar.';
   $('#produtividade-kpis').innerHTML = [
-    ['Concluídas na semana', num(resumo.atual), `Atividades concluídas na semana atual — ${dequem}`],
-    [`Contra ${rotuloBase}`, pilulaVariacao(resumo.variacao, resumo.delta),
-      `Base de comparação: ${num(resumo.comparavel)} conclusões${parcial ? ` (a semana anterior fechou com ${num(resumo.anterior)})` : ''}`],
-    ['Colaboradores ativos', num(resumo.ativos), `Quantos concluíram ao menos uma atividade na semana — ${dequem}`],
+    ['Concluídas na semana', num(resumo.atual), `Atividades concluídas ${daSemana} — ${dequem}`],
+    [`Contra ${rotuloBase}`, variacao(resumo.variacao, resumo.delta),
+      semBase ? semJanela
+        : `Base de comparação: ${num(resumo.comparavel)} conclusões${parcial ? ` (a semana anterior fechou com ${num(resumo.anterior)})` : ''}`],
+    ['Colaboradores ativos', num(resumo.ativos), `Quantos concluíram ao menos uma atividade ${daSemana} — ${dequem}`],
     ['Média por colaborador', String(resumo.porColaborador).replace('.', ','), 'Concluídas na semana ÷ colaboradores ativos'],
-    ['Média das semanas anteriores', String(resumo.media).replace('.', ','),
-      `Ritmo nas ${semanas.length - 1} semanas anteriores — ${dequem}`],
+    ['Média das semanas anteriores', semBase ? '—' : String(resumo.media).replace('.', ','),
+      semBase ? semJanela : `Ritmo nas ${semanas.length - 1} semanas anteriores — ${dequem}`],
   ]
     .map(([r, v, dica]) => `<li title="${esc(dica)}"><b>${v}</b><span>${r}</span></li>`)
     .join('');
 
   $('#th-comparavel').textContent = parcial ? 'Mesmo trecho anterior' : 'Semana anterior';
   $('#th-comparavel').title = parcial
-    ? 'A semana atual ainda não fechou: a comparação usa a semana passada só até o mesmo dia'
+    ? 'A última semana não fechou: a comparação usa a semana anterior só até o mesmo dia'
     : 'Semana anterior fechada';
 
   const temSelecao = estado.responsaveis.size > 0;
@@ -485,22 +500,35 @@ function renderizarProdutividade(p) {
       return `<tr class="${classes}" data-dim="responsaveis" data-valor="${esc(c.rotulo)}">
         <td><span${clicavel('responsaveis', c.rotulo)}>${esc(c.rotulo)}</span></td>
         <td class="numero destaque">${num(c.atual)}</td>
-        <td class="numero">${num(c.comparavel)}</td>
-        <td class="numero">${pilulaVariacao(c.variacao, c.delta)}</td>
+        <td class="numero">${semBase ? '—' : num(c.comparavel)}</td>
+        <td class="numero">${variacao(c.variacao, c.delta)}</td>
         <td class="faisca-celula">${faiscaSemanal(c.serie, semanas)}</td>
-        <td class="numero suave">${String(c.media).replace('.', ',')}</td>
+        <td class="numero suave">${semBase ? '—' : String(c.media).replace('.', ',')}</td>
       </tr>`;
     })
-    .join('') || '<tr><td colspan="6">Nenhuma atividade concluída nas últimas semanas para os filtros selecionados.</td></tr>';
+    .join('') || `<tr><td colspan="6">Nenhuma atividade concluída ${resumo.filtrada
+      ? 'no período filtrado' : 'nas últimas semanas'} para os filtros selecionados.</td></tr>`;
 
-  const janela = `${rotuloSemana(semanas[0].inicio, semanas[0].fim)} a ${rotuloSemana(atual.inicio, atual.fim)}`;
+  const janela = semanas.length > 1
+    ? `${rotuloSemana(semanas[0].inicio, semanas[0].fim)} a ${rotuloSemana(atual.inicio, atual.fim)}`
+    : rotuloSemana(atual.inicio, atual.fim);
   $('#produtividade-nota').textContent = [
-    `Cada atividade entra na semana em que foi concluída. Janela de ${semanas.length} semanas`
+    `Cada atividade entra na semana em que foi concluída. Janela de`
+      + ` ${semanas.length === 1 ? '1 semana' : `${semanas.length} semanas`}`
       + ` (${janela}), de segunda a domingo.`,
     'O ranking traz sempre todo mundo, mesmo com alguém selecionado — é por ele que se troca a'
       + ' seleção. Os indicadores acima e o gráfico ao lado seguem quem estiver marcado.',
-    'O filtro de período não vale neste cartão; espaço, épico, tipo e prioridade valem.',
-    resumo.emCurso
+    resumo.filtrada
+      ? 'A janela acompanha o filtro de período, junto com espaço, épico, tipo e prioridade. Uma'
+        + ' semana que o intervalo pega pela metade conta só os dias dentro dele e sai mais clara'
+        + ' no gráfico ao lado.'
+      : 'O filtro de período não está aplicado; espaço, épico, tipo e prioridade valem.',
+    resumo.truncada
+      ? `O período filtrado é mais longo que ${semanas.length} semanas: o cartão mostra as`
+        + ` ${semanas.length} últimas dele.`
+      : null,
+    semBase ? `${semJanela} A variação e a média ficam de fora.` : null,
+    resumo.emCurso || resumo.filtrada
       ? null
       : 'Sem conclusões nas últimas semanas: a janela recuou até a última semana com entregas.',
   ].filter(Boolean).join(' ');

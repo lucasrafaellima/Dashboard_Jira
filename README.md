@@ -221,18 +221,20 @@ sem precisar de uma sincronização completa.
 
 ### Produtividade semanal por colaborador
 
-Mostra quantas atividades cada pessoa **concluiu** em cada uma das **8 últimas semanas**
-(de segunda a domingo) e compara a semana atual com a anterior. Ao lado, o gráfico
-**Concluídas por semana** traz o total da equipe; clicar numa barra recorta o período
-naquela semana, do mesmo jeito que clicar num mês na evolução mensal.
+Mostra quantas atividades cada pessoa **concluiu** em cada semana da janela (de segunda a
+domingo) e compara a última semana com a anterior. Sem filtro de datas a janela são as **8
+últimas semanas**; com filtro, ela vira o **próprio intervalo** (veja abaixo). Ao lado, o
+gráfico **Concluídas por semana** traz o total da equipe; clicar numa barra recorta o
+período naquela semana, do mesmo jeito que clicar num mês na evolução mensal.
 
 Três coisas mudam a leitura do número e por isso ficam ditas na tela:
 
-- **A semana em curso é parcial.** Comparar uma terça-feira com uma semana inteira acusaria
-  queda toda segunda. Enquanto a semana não fecha, a comparação é contra o **mesmo trecho**
-  da semana passada (do começo dela até o mesmo dia da semana) — é o que a coluna
-  *Mesmo trecho anterior* traz. A faixa de indicadores guarda no `title` quanto a semana
-  anterior fechou, para quem quiser o número cheio.
+- **Semana pela metade é comparada pela metade.** Comparar uma terça-feira com uma semana
+  inteira acusaria queda toda segunda. Enquanto a última semana não fecha — porque ainda
+  está correndo ou porque o filtro de datas cortou no meio dela — a comparação é contra o
+  **mesmo trecho** da semana anterior (do começo dela até o mesmo dia da semana), e é o que
+  a coluna *Mesmo trecho anterior* traz. A faixa de indicadores guarda no `title` quanto a
+  semana anterior fechou, para quem quiser o número cheio.
 - **Conta a data de conclusão**, não a de criação: uma atividade aberta há um mês e fechada
   ontem é produtividade de ontem.
 - **A variação vem com o absoluto junto** (`▲ +100% (+1)`). Sozinho, o percentual mente de
@@ -245,13 +247,22 @@ pessoa. O **ranking continua trazendo todo mundo** (as outras linhas apenas desb
 porque é por ele que se troca a seleção: filtrado, sobraria uma linha só e não haveria como
 escolher outro nome. O título dos dois cartões diz de quem é o número em vigor.
 
-O filtro de **período** não vale aqui, porque as semanas já são o recorte — com um mês
-filtrado sobrariam 4 semanas e não haveria histórico para comparar. Espaço, épico, tipo e
-prioridade valem normalmente.
+O filtro de **período** vale aqui: a janela passa a ser o intervalo escolhido, das semanas
+que ele toca, e os números contam só as conclusões dentro dele. Espaço, épico, tipo e
+prioridade valem normalmente. Três consequências:
 
-Se a base estiver parada (sem sincronização há semanas), a janela recua até a última semana
-com entregas em vez de mostrar oito semanas zeradas — a nota embaixo do cartão avisa quando
-isso acontece.
+- **As pontas podem entrar pela metade.** Um intervalo que começa numa quarta conta só de
+  quarta em diante naquela semana. Essas semanas saem mais claras no gráfico ao lado, do
+  mesmo jeito que a semana em curso.
+- **Sem semana anterior inteira não há comparação.** Se o intervalo cabe numa semana só, ou
+  se a penúltima semana entra cortada pela borda, a variação e a média aparecem como `—`
+  em vez de um percentual inventado contra um número incompleto.
+- **Intervalos longos são truncados em 26 semanas** (as últimas do período): mais que isso
+  vira uma parede de barras ilegível. A nota embaixo do cartão avisa quando corta.
+
+Sem filtro de período e com a base parada (sem sincronização há semanas), a janela recua até
+a última semana com entregas em vez de mostrar oito semanas zeradas — a nota embaixo do
+cartão também avisa quando isso acontece.
 
 ### O que conta como concluída
 
