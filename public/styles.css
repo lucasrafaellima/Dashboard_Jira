@@ -335,8 +335,30 @@ td.epico { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-sp
 }
 .portao-caixa h1 { margin: 0 0 12px; color: var(--azul-escuro); font-size: 20px; }
 .portao-caixa p { margin: 0 0 20px; color: #444; font-size: 13px; line-height: 1.5; }
-.portao-caixa .btn { width: 100%; margin-top: 8px; }
+
+/* Aqui o fundo e branco, entao o `.btn` padrao (branco, sem borda) sumiria na
+   caixa. Os dois provedores tem o mesmo peso visual de proposito: nenhum dos
+   dois e "o" jeito de entrar. */
+.portao-caixa .btn {
+  width: 100%; margin-top: 8px;
+  display: flex; align-items: center; justify-content: center; gap: 9px;
+  padding: 10px 14px; font-size: 13px;
+  background: #fff; color: var(--texto);
+  border: 1px solid var(--borda);
+}
+.portao-caixa .btn:hover { background: var(--azul-claro); color: var(--azul-escuro); }
 .portao-caixa .btn.oculto { display: none; }
+
+/* a saida e um caminho de escape, nao uma opcao de entrada: fica mais apagada */
+.portao-caixa .btn.secundario {
+  background: transparent; border-color: transparent;
+  color: var(--suave); font-weight: 500; margin-top: 14px;
+}
+.portao-caixa .btn.secundario:hover { background: #f1f6fc; color: var(--azul-escuro); }
+
+.portao-provedores { display: grid; }
+.portao-provedores.oculto { display: none; }
+.portao-marca { width: 16px; height: 16px; flex: none; }
 
 /* enquanto o portão está de pé, o painel atrás não rola */
 body.travado { overflow: hidden; }

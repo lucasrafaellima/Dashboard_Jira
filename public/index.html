@@ -15,7 +15,28 @@
   <div class="portao-caixa">
     <h1>Dashboard Jira</h1>
     <p id="portao-msg">Verificando sessão…</p>
-    <button id="btn-entrar" class="btn oculto">Entrar com Google</button>
+    <!-- Os dois levam ao mesmo lugar: o que libera o painel é o e-mail estar em
+         `permitidos/`, não o provedor por onde ele entrou. -->
+    <div id="portao-entrar" class="portao-provedores oculto">
+      <button id="btn-entrar" class="btn">
+        <svg class="portao-marca" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+          <path fill="#4285f4" d="M45 24c0-1.6-.1-2.7-.4-4H24v7.5h12c-.2 2-1.6 5-4.5 7l6.9 5.4C42.5 36.1 45 30.5 45 24z"/>
+          <path fill="#34a853" d="M24 46c5.9 0 10.9-2 14.4-5.3l-6.9-5.4c-1.9 1.3-4.4 2.2-7.5 2.2-5.8 0-10.7-3.8-12.4-9.1l-7.1 5.5C8 41 15.4 46 24 46z"/>
+          <path fill="#fbbc05" d="M11.6 28.4c-.5-1.3-.7-2.8-.7-4.4s.3-3.1.7-4.4l-7.1-5.5C3 17 2 20.4 2 24s1 7 2.5 9.9l7.1-5.5z"/>
+          <path fill="#ea4335" d="M24 10.4c3.3 0 6.1 1.1 8.4 3.3l6.1-6.1C34.9 4.1 29.9 2 24 2 15.4 2 8 7 4.5 14.1l7.1 5.5c1.7-5.3 6.6-9.2 12.4-9.2z"/>
+        </svg>
+        Entrar com Google
+      </button>
+      <button id="btn-entrar-outlook" class="btn">
+        <svg class="portao-marca" viewBox="0 0 48 48" aria-hidden="true" focusable="false">
+          <path fill="#f25022" d="M4 4h19v19H4z"/>
+          <path fill="#7fba00" d="M25 4h19v19H25z"/>
+          <path fill="#00a4ef" d="M4 25h19v19H4z"/>
+          <path fill="#ffb900" d="M25 25h19v19H25z"/>
+        </svg>
+        Entrar com Outlook
+      </button>
+    </div>
     <button id="portao-sair" class="btn secundario oculto">Sair e trocar de conta</button>
   </div>
 </div>

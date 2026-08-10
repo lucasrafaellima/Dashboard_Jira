@@ -9,13 +9,32 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{banco}/documents {
 
-    // E-mail da sessao, em minusculas, e so se o provedor confirmou o endereco.
-    // Sem o email_verified, um provedor que aceite e-mail nao verificado deixaria
-    // alguem se passar por um endereco da lista.
+    // O endereco da sessao pode ser levado a serio?
+    //
+    // Sem essa conferencia, um provedor que aceite e-mail nao verificado
+    // deixaria alguem se passar por um endereco da lista.
+    //
+    // O Google marca `email_verified`. O login com **Microsoft nao**: o Firebase
+    // recebe o token do Azure AD sem essa claim e grava `false` mesmo quando a
+    // Microsoft ja confirmou o endereco (firebase/firebase-functions#1592).
+    // Exigir a claim aqui deixaria **todo** login com Outlook em
+    // `permission-denied`, com a pessoa vendo "conta nao liberada" sem ter como
+    // consertar.
+    //
+    // Aceitar o endereco vindo do 'microsoft.com' se apoia no mesmo que torna o
+    // do Google aceitavel: quem emite e confirma o e-mail e o provedor. Numa
+    // conta pessoal, um alias so entra depois de a Microsoft provar a posse; numa
+    // conta corporativa, o endereco e atribuido pelo proprio tenant.
+    function provedorConfirmaEmail() {
+      return request.auth.token.email_verified == true
+             || request.auth.token.firebase.sign_in_provider == 'microsoft.com';
+    }
+
+    // E-mail da sessao, em minusculas, e so se der para confiar nele.
     function email() {
       return request.auth != null
              && request.auth.token.email != null
-             && request.auth.token.email_verified == true
+             && provedorConfirmaEmail()
              ? request.auth.token.email.lower()
              : null;
     }

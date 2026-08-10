@@ -296,7 +296,7 @@ tools/importar.js      importação em lote pela pasta data/
 tools/publicar-firestore.js  publica a base como snapshot no Firestore
 public/                index.html, styles.css, app.js (gráficos SVG)
 public/fonte.js        decide no boot: backend Node ou Firestore
-public/portao.js       login com Google (só no modo público)
+public/portao.js       login com Google ou Outlook (só no modo público)
 firestore.rules        quem pode ler o snapshot — a barreira de acesso de verdade
 .github/workflows/     sincronização por cron e publicação no GitHub Pages
 data/                  as planilhas que você foi adicionando
@@ -336,7 +336,7 @@ publicado errado.
 | | **servidor** (`npm start`) | **público** (GitHub Pages) |
 |---|---|---|
 | Dados | SQLite local, agregados no Node | snapshot do Firestore, agregado no navegador |
-| Login | nenhum (escuta em `127.0.0.1`) | conta Google + lista de permitidos |
+| Login | nenhum (escuta em `127.0.0.1`) | conta Google ou Outlook + lista de permitidos |
 | Sincronizar / Configurar Jira / Planilha | sim | escondidos |
 | Exportar | `.xlsx` | `.csv` |
 | PDF, filtros, gráficos | sim | sim |
@@ -349,7 +349,9 @@ monta isso é `src/metricas-banco.js`; no navegador, o snapshot baixado.
 
 Uma vez, no console do Firebase (projeto `dashboard-81c66`):
 
-1. **Authentication → Sign-in method** → habilitar **Google**.
+1. **Authentication → Sign-in method** → habilitar **Google** e, para o botão
+   *Entrar com Outlook*, também **Microsoft** (tem
+   [passo a passo abaixo](#habilitar-o-login-com-outlook-microsoft)).
 2. **Authentication → Settings → Authorized domains** → adicionar
    `lucasrafaellima.github.io`. Sem isso o login falha com `auth/unauthorized-domain`.
 3. **Firestore Database → Create database** → produção, região `southamerica-east1`.
@@ -368,6 +370,49 @@ No GitHub, em *Settings*:
   separado para o CI, para poder revogá-lo sem derrubar o uso local.
 - Rodar o workflow **Sincronizar Jira e publicar snapshot** na mão uma vez: o site
   só serve para alguma coisa depois que existe um snapshot.
+
+#### Habilitar o login com Outlook (Microsoft)
+
+A tela já traz os dois botões, mas o **Entrar com Outlook** só funciona depois de
+registrar um aplicativo na Microsoft — o Firebase não tem um provedor Microsoft
+pronto como tem o do Google. Enquanto não estiver ligado, quem clicar recebe a
+mensagem *"o login com Outlook ainda não foi habilitado no Firebase"*.
+
+No [portal do Azure](https://portal.azure.com) → **Microsoft Entra ID → App
+registrations → New registration**:
+
+1. Nome: `Dashboard Jira` (só aparece na tela de consentimento).
+2. *Supported account types*: **Accounts in any organizational directory and
+   personal Microsoft accounts** — é o que o código pede com `tenant: 'common'`.
+   Para fechar o login só na empresa, escolha *single tenant* aqui **e** troque o
+   `'common'` pelo ID do tenant em `public/portao.js`.
+3. *Redirect URI* → plataforma **Web** → exatamente:
+   `https://dashboard-81c66.firebaseapp.com/__/auth/handler`
+   (é o que o Firebase mostra ao habilitar o provedor; errar aqui dá
+   `AADSTS50011` na hora do login).
+4. Registrar e copiar o **Application (client) ID**.
+5. **Certificates & secrets → New client secret** → copiar o **Value** (não o
+   *Secret ID*; o valor só aparece uma vez).
+
+No console do Firebase → **Authentication → Sign-in method → Microsoft**:
+habilitar, colar o *Application ID* e o *secret*, salvar.
+
+⚠️ **O segredo do cliente expira** (a Microsoft dá no máximo 24 meses). No dia em
+que expirar, o login com Outlook para de funcionar e o do Google continua — se um
+dia só o Outlook falhar, é o primeiro lugar a olhar. Vale anotar a data de
+validade em algum lugar visível.
+
+Por fim, **republique o `firestore.rules`** (Firestore Database → Rules → colar →
+*Publish*): a versão nova aceita o e-mail vindo da Microsoft. Sem isso, o login
+com Outlook conclui e o painel responde *"conta não liberada"* — a Microsoft não
+envia a claim `email_verified` e o Firebase grava `false` mesmo com o endereço
+confirmado ([firebase-functions#1592](https://github.com/firebase/firebase-functions/issues/1592)),
+então a regra antiga rejeita todo mundo que entra por lá.
+
+A lista de permitidos não muda: continua sendo `permitidos/<e-mail em
+minúsculas>`. Quem tem o mesmo endereço nos dois provedores usa o botão que
+quiser — mas só o **primeiro** que usar: o Firebase guarda uma conta por e-mail e
+recusa a segunda com *"já entrou aqui por outro provedor"*.
 
 #### O link do Pages abre o README em vez do sistema
 

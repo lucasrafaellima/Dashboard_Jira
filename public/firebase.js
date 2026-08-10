@@ -12,7 +12,7 @@
 // — o painel le um snapshot publicado de tempos em tempos, nao um fluxo vivo.
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js';
 import {
-  getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
+  getAuth, GoogleAuthProvider, OAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
 } from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-auth.js';
 import {
   getFirestore, doc, getDoc, collection, getDocs,
@@ -25,6 +25,8 @@ export const auth = getAuth(app);
 export const bd = getFirestore(app);
 
 export {
-  GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
+  // `OAuthProvider` e o generico do SDK; o login com Outlook e ele apontado
+  // para 'microsoft.com' (ver portao.js). Nao existe um MicrosoftAuthProvider.
+  GoogleAuthProvider, OAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
   doc, getDoc, collection, getDocs,
 };
