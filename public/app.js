@@ -97,6 +97,42 @@ function svg(largura, altura, conteudo) {
 
 const vazio = (msg = 'Sem dados para os filtros selecionados.') => `<p class="vazio">${msg}</p>`;
 
+/**
+ * Largura de viewBox para o gráfico que vai dentro de `el`: a do próprio quadro,
+ * em pixels. O SVG ocupa 100% da largura do quadro, então casar as duas medidas
+ * faz o desenho sair em escala 1:1 — e só assim o `font-size` do CSS vale como
+ * está escrito.
+ *
+ * Com largura fixa era a escala que mandava no tamanho da letra: o mesmo gráfico
+ * de 760 de viewBox saía com a fonte cheia no cartão largo e com dois terços
+ * dela nos cartões de três colunas (tipos, prioridades, épicos), onde o
+ * navegador encolhia texto e barras juntos. Era ali que os rótulos ficavam
+ * ilegíveis.
+ *
+ * `minimo` segura o piso: num celular o cartão fica mais estreito do que o
+ * desenho comporta, e aí é melhor deixar o SVG encolher sozinho — como antes —
+ * do que espremer o gráfico até as barras sumirem.
+ */
+function larguraDo(el, minimo) {
+  return Math.max(Math.round(el?.clientWidth ?? 0), minimo);
+}
+
+/** Corta o texto em `n` caracteres, com reticências no lugar do que sobrou. */
+const cortar = (texto, n) => {
+  const t = String(texto);
+  return t.length > n ? `${t.slice(0, Math.max(1, n - 1))}…` : t;
+};
+
+/**
+ * Largura média de um caractere nos rótulos dos gráficos (12px Segoe UI). Serve
+ * para decidir o que cabe numa coluna antes de desenhar — medir de verdade
+ * exigiria pôr o texto na tela e ler de volta, a cada rótulo de cada gráfico.
+ */
+const LARGURA_LETRA = 6.6;
+
+/** Distância entre duas linhas de um rótulo de eixo quebrado em várias. */
+const ALTURA_LINHA_ROTULO = 14;
+
 // ------------------------------------------------------ graficos que filtram
 
 /** Último dia do mês "aaaa-mm", como "2026-08-31". */
@@ -200,69 +236,127 @@ const atraso = (i) => ` style="animation-delay:${Math.min(i * 28, 260)}ms"`;
 // ------------------------------------------------------------ graficos
 
 /**
+ * Quebra um rotulo em ate `maxLinhas` linhas de `porLinha` caracteres. O que
+ * nao couber vira reticencias na ultima linha — cortar e melhor do que deixar o
+ * texto invadir a coluna do vizinho.
+ */
+function quebrarRotulo(texto, porLinha, maxLinhas) {
+  const linhas = [];
+  let atual = '';
+  for (const palavra of String(texto).split(' ')) {
+    if (!atual) atual = palavra;
+    else if (`${atual} ${palavra}`.length <= porLinha) atual += ` ${palavra}`;
+    else { linhas.push(atual); atual = palavra; }
+  }
+  if (atual) linhas.push(atual);
+
+  // uma palavra sozinha maior que a linha (um nome de status comprido) nao foi
+  // quebrada pelo laco acima: corta cada linha no limite
+  const cabidas = linhas.slice(0, maxLinhas).map((l) => cortar(l, porLinha));
+  if (linhas.length > maxLinhas) cabidas[maxLinhas - 1] = cortar(cabidas[maxLinhas - 1], porLinha - 1);
+  return cabidas;
+}
+
+/** Altura da área de plotagem — igual em todos os gráficos de coluna. */
+const ALTURA_PLOTAGEM = 210;
+
+/** Seno de 45°, o ângulo em que os rótulos deitam quando a coluna aperta. */
+const SENO_45 = 0.7071;
+
+/**
  * Barras verticais com rotulo de valor no topo — "Status das Atividades".
+ *
+ * A altura do quadro sai do que os rotulos pedem embaixo, e nao de um numero
+ * fixo: assim a area de plotagem tem sempre a mesma altura, com dois rotulos
+ * curtos ou com vinte e seis semanas deitadas.
  *
  * @param {object[]} dados pontos `{ rotulo, total, valor?, dica? }`
  * @param {object} [opcoes]
  * @param {(rotulo: string, ponto: object) => string} [opcoes.cor] cor da barra
  * @param {string} [opcoes.dim] dimensao que o clique filtra
+ * @param {number} [opcoes.largura] largura do viewBox, em pixels (ver larguraDo)
  */
-function barrasVerticais(dados, { cor, dim } = {}) {
+function barrasVerticais(dados, { cor, dim, largura } = {}) {
   if (!dados.length) return vazio();
 
-  const L = 760, A = 300;
-  const margem = { top: 22, dir: 12, baixo: 58, esq: 44 };
-  const larguraUtil = L - margem.esq - margem.dir;
-  const alturaUtil = A - margem.top - margem.baixo;
+  const L = largura ?? 760;
+  const esq = 52, dir = 12, top = 28;
+  const larguraUtil = L - esq - dir;
+  const alturaUtil = ALTURA_PLOTAGEM;
   const max = topoEixo(Math.max(...dados.map((d) => d.total)));
   const passo = larguraUtil / dados.length;
   const larguraBarra = Math.min(56, passo * 0.55);
 
+  // Quantas letras cabem numa linha de rotulo dentro da coluna. Com folga o
+  // rotulo quebra em ate tres linhas deitadas; apertado, ele vira de lado —
+  // picar "04–10/ago" em pedacos de quatro letras nao se le de jeito nenhum.
+  const porLinha = Math.floor((passo - 5) / LARGURA_LETRA);
+  const emPe = porLinha < 8;
+  const rotulos = dados.map((d) =>
+    (emPe ? [cortar(d.rotulo, 18)] : quebrarRotulo(d.rotulo, porLinha, 3)));
+
+  // rotulo em pe ainda encosta no vizinho quando as colunas sao muitas: mostra
+  // um a cada tantos. A barra e a faixa de clique continuam ali para filtrar
+  const salto = emPe ? Math.max(1, Math.ceil(13 / Math.max(passo * SENO_45, 1))) : 1;
+
+  // o espaco embaixo e o que os rotulos ocupam: em pe eles medem a diagonal do
+  // proprio texto, deitados medem uma altura de linha cada
+  const alturaRotulos = emPe
+    ? Math.round(Math.max(...rotulos.map((r) => r[0].length)) * LARGURA_LETRA * SENO_45)
+    : Math.max(...rotulos.map((r) => r.length)) * ALTURA_LINHA_ROTULO;
+  const baixo = 16 + alturaRotulos;
+  const A = top + alturaUtil + baixo;
+  const baseRotulo = top + alturaUtil + (emPe ? 14 : 20);
+
   let saida = '';
   for (let i = 0; i <= 5; i++) {
     const v = (max / 5) * i;
-    const y = margem.top + alturaUtil - (v / max) * alturaUtil;
-    saida += `<line class="grade" x1="${margem.esq}" y1="${y}" x2="${L - margem.dir}" y2="${y}"/>`;
-    saida += `<text class="eixo" x="${margem.esq - 8}" y="${y + 3}" text-anchor="end">${v}</text>`;
+    const y = top + alturaUtil - (v / max) * alturaUtil;
+    saida += `<line class="grade" x1="${esq}" y1="${y}" x2="${L - dir}" y2="${y}"/>`;
+    saida += `<text class="eixo" x="${esq - 9}" y="${y + 4}" text-anchor="end">${v}</text>`;
   }
 
   dados.forEach((d, i) => {
     const alt = max ? (d.total / max) * alturaUtil : 0;
-    const x = margem.esq + passo * i + (passo - larguraBarra) / 2;
-    const y = margem.top + alturaUtil - alt;
+    const x = esq + passo * i + (passo - larguraBarra) / 2;
+    const y = top + alturaUtil - alt;
+    const centro = esq + passo * i + passo / 2;
     const val = valorDe(d);
     // a barra pode ser rasteira ou zerada: a área de clique cobre a coluna
     // inteira, senão sobraria um alvo de 1px
-    let bloco = `<rect${clicavel(dim, val, 'area-clique')} x="${margem.esq + passo * i}" y="${margem.top}" width="${passo}" height="${alturaUtil}" fill="transparent"><title>${esc(d.dica ?? `${d.rotulo}: ${d.total}`)}</title></rect>`;
+    let bloco = `<rect${clicavel(dim, val, 'area-clique')} x="${esq + passo * i}" y="${top}" width="${passo}" height="${alturaUtil}" fill="transparent"><title>${esc(d.dica ?? `${d.rotulo}: ${d.total}`)}</title></rect>`;
     bloco += `<rect${clicavel(dim, val, 'cresce-y')} x="${x}" y="${y}" width="${larguraBarra}" height="${Math.max(alt, 0)}" fill="${cor ? cor(d.rotulo, d) : PALETA[0]}" rx="2"${atraso(i)}><title>${esc(d.dica ?? `${d.rotulo}: ${d.total}`)}</title></rect>`;
-    bloco += `<text class="rotulo-valor surge" x="${x + larguraBarra / 2}" y="${y - 6}" text-anchor="middle"${atraso(i)}>${d.total}</text>`;
+    bloco += `<text class="rotulo-valor surge" x="${x + larguraBarra / 2}" y="${y - 7}" text-anchor="middle"${atraso(i)}>${d.total}</text>`;
 
-    const palavras = String(d.rotulo).split(' ');
-    const linhas = [];
-    let atual = '';
-    for (const p of palavras) {
-      if ((atual + ' ' + p).trim().length > 13) { linhas.push(atual.trim()); atual = p; }
-      else atual = `${atual} ${p}`;
+    if (i % salto === 0) {
+      const gira = emPe ? ` transform="rotate(-45 ${centro.toFixed(1)} ${baseRotulo})"` : '';
+      const ancora = emPe ? 'end' : 'middle';
+      rotulos[i].forEach((linha, j) => {
+        bloco += `<text${clicavel(dim, val, 'eixo surge')} x="${centro.toFixed(1)}"`
+          + ` y="${baseRotulo + j * ALTURA_LINHA_ROTULO}" text-anchor="${ancora}"${gira}${atraso(i)}>`
+          + `${esc(linha)}<title>${esc(d.rotulo)}</title></text>`;
+      });
     }
-    if (atual.trim()) linhas.push(atual.trim());
-    linhas.slice(0, 3).forEach((linha, j) => {
-      bloco += `<text${clicavel(dim, val, 'eixo surge')} x="${margem.esq + passo * i + passo / 2}" y="${margem.top + alturaUtil + 16 + j * 11}" text-anchor="middle"${atraso(i)}>${esc(linha)}</text>`;
-    });
     saida += grupo(bloco);
   });
 
-  saida += `<line class="grade" x1="${margem.esq}" y1="${margem.top + alturaUtil}" x2="${L - margem.dir}" y2="${margem.top + alturaUtil}" stroke="#9db4cf"/>`;
+  saida += `<line class="grade" x1="${esq}" y1="${top + alturaUtil}" x2="${L - dir}" y2="${top + alturaUtil}" stroke="#9db4cf"/>`;
   return svg(L, A, saida);
 }
 
 /** Barras horizontais — "Tickets criados por espaços". */
-function barrasHorizontais(dados, { cor, dim } = {}) {
+function barrasHorizontais(dados, { cor, dim, largura } = {}) {
   if (!dados.length) return vazio();
 
-  const L = 560;
-  const alturaLinha = 26;
-  // margem esquerda larga o bastante para nomes como "Acompanhamento - Gestão"
-  const margem = { top: 10, dir: 54, baixo: 10, esq: 152 };
+  const L = largura ?? 560;
+  // a linha e alta o bastante para o nome caber sem encostar no de cima
+  const alturaLinha = 30;
+  // A coluna dos nomes e uma fatia da largura, e nao uma medida fixa: no cartao
+  // estreito ela cede espaco para a barra, no largo cabe "Acompanhamento -
+  // Gestão" inteiro. O corte do texto acompanha a fatia que sobrou.
+  const esq = Math.round(Math.min(Math.max(L * 0.32, 110), 215));
+  const margem = { top: 10, dir: 52, baixo: 10, esq };
+  const maxRotulo = Math.max(10, Math.floor((esq - 12) / LARGURA_LETRA));
   const A = margem.top + margem.baixo + dados.length * alturaLinha;
   const larguraUtil = L - margem.esq - margem.dir;
   const max = Math.max(...dados.map((d) => d.total)) || 1;
@@ -271,28 +365,41 @@ function barrasHorizontais(dados, { cor, dim } = {}) {
   dados.forEach((d, i) => {
     const y = margem.top + i * alturaLinha;
     const larg = (d.total / max) * larguraUtil;
-    const rotulo = String(d.rotulo).length > 25 ? `${String(d.rotulo).slice(0, 24)}…` : d.rotulo;
+    const rotulo = cortar(d.rotulo, maxRotulo);
     const val = valorDe(d);
     // faixa invisível na linha toda: clicar em qualquer ponto dela filtra
     let bloco = `<rect${clicavel(dim, val, 'area-clique')} x="0" y="${y}" width="${L}" height="${alturaLinha}" fill="transparent"><title>${esc(d.rotulo)}: ${d.total}</title></rect>`;
-    bloco += `<text${clicavel(dim, val, 'eixo surge')} x="${margem.esq - 8}" y="${y + alturaLinha / 2 + 3}" text-anchor="end"${atraso(i)}>${esc(rotulo)}<title>${esc(d.rotulo)}</title></text>`;
-    bloco += `<rect${clicavel(dim, val, 'cresce-x')} x="${margem.esq}" y="${y + 4}" width="${Math.max(larg, 1)}" height="${alturaLinha - 10}" fill="${cor ? cor(d.rotulo) : PALETA[0]}" rx="2"${atraso(i)}><title>${esc(d.rotulo)}: ${d.total}</title></rect>`;
-    bloco += `<text class="rotulo-valor surge" x="${margem.esq + larg + 7}" y="${y + alturaLinha / 2 + 4}"${atraso(i)}>${d.total}</text>`;
+    bloco += `<text${clicavel(dim, val, 'eixo surge')} x="${margem.esq - 9}" y="${y + alturaLinha / 2 + 4}" text-anchor="end"${atraso(i)}>${esc(rotulo)}<title>${esc(d.rotulo)}</title></text>`;
+    bloco += `<rect${clicavel(dim, val, 'cresce-x')} x="${margem.esq}" y="${y + 6}" width="${Math.max(larg, 1)}" height="${alturaLinha - 12}" fill="${cor ? cor(d.rotulo) : PALETA[0]}" rx="2"${atraso(i)}><title>${esc(d.rotulo)}: ${d.total}</title></rect>`;
+    bloco += `<text class="rotulo-valor surge" x="${margem.esq + larg + 8}" y="${y + alturaLinha / 2 + 4}"${atraso(i)}>${d.total}</text>`;
     saida += grupo(bloco);
   });
   return svg(L, A, saida);
 }
 
 /** Pizza com legenda — "Atividades concluídas por responsável". */
-function pizza(dados, { dim } = {}) {
+function pizza(dados, { dim, largura } = {}) {
   const validos = dados.filter((d) => d.total > 0);
   if (!validos.length) return vazio();
 
-  const L = 560;
+  const L = largura ?? 560;
   // a legenda cresce com o numero de responsaveis; o quadro acompanha para ela
   // nao vazar o cartao (na impressao isso virava texto por cima da borda)
-  const A = Math.max(270, 44 + validos.length * 24);
-  const cx = 140, cy = A / 2, r = 100;
+  const alturaItem = 27;
+
+  // Lado a lado, o disco e a legenda dividem a largura. Num cartao estreito —
+  // celular, onde a grade vira uma coluna so — os dois nao cabem: a legenda
+  // desce para baixo do disco, em vez de comecar fora do quadro.
+  const empilhado = L < 430;
+  const r = empilhado ? Math.min(88, L / 2 - 24) : 100;
+  const cx = empilhado ? L / 2 : 32 + r;
+  // onde a legenda comeca e quanto texto cabe nela ate a borda do quadro
+  const xLegenda = empilhado ? 14 : cx + r + 24;
+  const xTexto = xLegenda + 21;
+  const topoLegenda = empilhado ? 2 * r + 34 : 36;
+  const fimLegenda = topoLegenda + validos.length * alturaItem;
+  const A = empilhado ? fimLegenda + 6 : Math.max(2 * r + 40, fimLegenda + 10);
+  const cy = empilhado ? r + 14 : A / 2;
   const total = validos.reduce((s, d) => s + d.total, 0);
 
   let saida = '';
@@ -317,13 +424,17 @@ function pizza(dados, { dim } = {}) {
   });
 
   validos.forEach((d, i) => {
-    const y = 34 + i * 24;
+    const y = topoLegenda + i * alturaItem;
     const val = valorDe(d);
     const pct = ((d.total / total) * 100).toFixed(1);
+    // o nome cede primeiro: o numero e o percentual sao o que a legenda existe
+    // para dizer, e sem eles a fatia vira so uma cor
+    const sufixo = ` — ${d.total} (${pct}%)`;
+    const nome = cortar(d.rotulo, Math.max(6, Math.floor((L - xTexto - 6) / LARGURA_LETRA) - sufixo.length));
     // a linha inteira da legenda filtra, não só o texto
-    let bloco = `<rect${clicavel(dim, val, 'area-clique')} x="281" y="${y - 13}" width="${L - 285}" height="20" fill="transparent"><title>${esc(d.rotulo)}: ${d.total} (${pct}%)</title></rect>`;
-    bloco += `<rect${clicavel(dim, val, 'secundaria surge')} x="285" y="${y - 9}" width="11" height="11" rx="2" fill="${PALETA[i % PALETA.length]}"${atraso(i)}/>`;
-    bloco += `<text${clicavel(dim, val, 'legenda surge')} x="303" y="${y}"${atraso(i)}>${esc(d.rotulo)} — ${d.total} (${pct}%)</text>`;
+    let bloco = `<rect${clicavel(dim, val, 'area-clique')} x="${xLegenda - 4}" y="${y - 14}" width="${L - xLegenda}" height="${alturaItem - 4}" fill="transparent"><title>${esc(d.rotulo)}: ${d.total} (${pct}%)</title></rect>`;
+    bloco += `<rect${clicavel(dim, val, 'secundaria surge')} x="${xLegenda}" y="${y - 10}" width="12" height="12" rx="2" fill="${PALETA[i % PALETA.length]}"${atraso(i)}/>`;
+    bloco += `<text${clicavel(dim, val, 'legenda surge')} x="${xTexto}" y="${y}"${atraso(i)}>${esc(nome)}${esc(sufixo)}<title>${esc(d.rotulo)}</title></text>`;
     saida += grupo(bloco);
   });
 
@@ -331,23 +442,28 @@ function pizza(dados, { dim } = {}) {
 }
 
 /** Barras agrupadas — evolucao mensal. */
-function barrasAgrupadas(serie) {
+function barrasAgrupadas(serie, { largura } = {}) {
   if (!serie.length) return vazio();
 
-  const L = 860, A = 300;
-  const margem = { top: 26, dir: 12, baixo: 44, esq: 44 };
+  const L = largura ?? 860;
+  // o topo abre espaço para a legenda e ainda deixa o rótulo da barra mais alta
+  // passar por baixo dela
+  const margem = { top: 42, dir: 12, baixo: 46, esq: 52 };
+  const alturaUtil = ALTURA_PLOTAGEM;
+  const A = margem.top + alturaUtil + margem.baixo;
   const larguraUtil = L - margem.esq - margem.dir;
-  const alturaUtil = A - margem.top - margem.baixo;
   const max = topoEixo(Math.max(1, ...serie.flatMap((d) => [d.criadas, d.concluidas])));
   const passo = larguraUtil / serie.length;
   const larguraBarra = Math.min(26, passo * 0.32);
+  // com muitos meses na janela os nomes se tocam: mostra um a cada tantos
+  const salto = Math.max(1, Math.ceil(40 / Math.max(passo, 1)));
 
   let saida = '';
   for (let i = 0; i <= 5; i++) {
     const v = (max / 5) * i;
     const y = margem.top + alturaUtil - (v / max) * alturaUtil;
     saida += `<line class="grade" x1="${margem.esq}" y1="${y}" x2="${L - margem.dir}" y2="${y}"/>`;
-    saida += `<text class="eixo" x="${margem.esq - 8}" y="${y + 3}" text-anchor="end">${Math.round(v)}</text>`;
+    saida += `<text class="eixo" x="${margem.esq - 9}" y="${y + 4}" text-anchor="end">${Math.round(v)}</text>`;
   }
 
   serie.forEach((d, i) => {
@@ -361,14 +477,16 @@ function barrasAgrupadas(serie) {
       // só a barra de "criadas" recebe foco: as duas do mês fazem a mesma coisa
       const papel = campo === 'criadas' ? 'cresce-y' : 'cresce-y secundaria';
       bloco += `<rect${clicavel('mes', d.mes, papel)} x="${x}" y="${y}" width="${larguraBarra}" height="${Math.max(alt, 0)}" fill="${cor}" rx="2"${atraso(i)}><title>${mesCurto(d.mes)} — ${campo}: ${d[campo]}</title></rect>`;
-      if (d[campo] > 0) bloco += `<text class="rotulo-valor surge" x="${x + larguraBarra / 2}" y="${y - 5}" text-anchor="middle"${atraso(i)}>${d[campo]}</text>`;
+      if (d[campo] > 0) bloco += `<text class="rotulo-valor surge" x="${x + larguraBarra / 2}" y="${y - 7}" text-anchor="middle"${atraso(i)}>${d[campo]}</text>`;
     });
-    bloco += `<text${clicavel('mes', d.mes, 'eixo surge')} x="${centro}" y="${margem.top + alturaUtil + 16}" text-anchor="middle"${atraso(i)}>${mesCurto(d.mes)}</text>`;
+    if (i % salto === 0) {
+      bloco += `<text${clicavel('mes', d.mes, 'eixo surge')} x="${centro}" y="${margem.top + alturaUtil + 20}" text-anchor="middle"${atraso(i)}>${mesCurto(d.mes)}</text>`;
+    }
     saida += grupo(bloco);
   });
 
-  saida += `<rect x="${margem.esq}" y="6" width="10" height="10" rx="2" fill="${PALETA[0]}"/><text class="legenda" x="${margem.esq + 15}" y="15">criadas</text>`;
-  saida += `<rect x="${margem.esq + 78}" y="6" width="10" height="10" rx="2" fill="${PALETA[2]}"/><text class="legenda" x="${margem.esq + 93}" y="15">concluídas</text>`;
+  saida += `<rect x="${margem.esq}" y="8" width="12" height="12" rx="2" fill="${PALETA[0]}"/><text class="legenda" x="${margem.esq + 17}" y="18">criadas</text>`;
+  saida += `<rect x="${margem.esq + 92}" y="8" width="12" height="12" rx="2" fill="${PALETA[2]}"/><text class="legenda" x="${margem.esq + 109}" y="18">concluídas</text>`;
   return svg(L, A, saida);
 }
 
@@ -532,20 +650,6 @@ function renderizarProdutividade(p) {
       ? null
       : 'Sem conclusões nas últimas semanas: a janela recuou até a última semana com entregas.',
   ].filter(Boolean).join(' ');
-
-  $('#grafico-semanas').innerHTML = barrasVerticais(
-    semanas.map((s) => ({
-      rotulo: rotuloSemana(s.inicio, s.fim),
-      valor: s.inicio,
-      total: s.total,
-      parcial: s.parcial,
-      dica: `${semanaPorExtenso(s.inicio, s.fim)}: ${s.total} concluída(s)`
-        + (s.parcial ? ' — semana em curso' : ''),
-    })),
-    // a semana em curso sai mais clara: ela ainda vai crescer, e uma barra
-    // cheia ao lado das fechadas leria como queda
-    { dim: 'semana', cor: (_, d) => (d.parcial ? '#a9cd8a' : PALETA[2]) },
-  );
 }
 
 // ------------------------------------------------------------ capa do relatorio
@@ -738,6 +842,74 @@ function mostrarValidade(quando) {
   })}`;
 }
 
+/**
+ * Piso da largura de viewBox dos graficos. Abaixo disso — um celular em pe — o
+ * desenho nao tem mais como ceder espaco, e vale deixar o SVG encolher junto
+ * com o cartao.
+ */
+const LARGURA_MINIMA = 320;
+
+/**
+ * Desenha os graficos a partir dos dados ja carregados.
+ *
+ * Esta fora do `renderizar` porque o tamanho do cartao entra no desenho: o
+ * viewBox de cada grafico e a largura medida do quadro onde ele vai (ver
+ * `larguraDo`), entao mudar a largura da janela pede um redesenho — mas so dos
+ * graficos, e nao da tabela de centenas de linhas ao lado deles.
+ */
+function desenharGraficos() {
+  const d = estado.dados;
+  if (!d) return;
+
+  const em = (seletor, montar) => {
+    const el = $(seletor);
+    if (el) el.innerHTML = montar(larguraDo(el, LARGURA_MINIMA));
+  };
+
+  em('#grafico-status', (largura) => barrasVerticais(
+    [...d.porStatus].sort((a, b) => a.rotulo.localeCompare(b.rotulo, 'pt-BR')),
+    { cor: corStatus, dim: 'status', largura },
+  ));
+  em('#grafico-responsaveis', (largura) =>
+    pizza(d.concluidasPorResponsavel, { dim: 'responsaveis', largura }));
+  em('#grafico-espacos', (largura) => barrasHorizontais(
+    [...d.porEspaco].sort((a, b) => a.rotulo.localeCompare(b.rotulo, 'pt-BR')),
+    { dim: 'espacos', largura },
+  ));
+  em('#grafico-mensal', (largura) => barrasAgrupadas(d.serieMensal, { largura }));
+  em('#grafico-tipos', (largura) =>
+    barrasHorizontais(d.porTipo, { cor: () => PALETA[0], dim: 'tipos', largura }));
+  em('#grafico-prioridades', (largura) =>
+    barrasHorizontais(d.porPrioridade, { dim: 'prioridades', largura }));
+
+  // so os 12 maiores: a lista inteira de epicos nao cabe num grafico de barras.
+  // O que estiver selecionado entra de todo jeito, senão sumiria da tela sem
+  // dar como desmarcar
+  const epicos = d.porEpico ?? [];
+  const visiveis = epicos.slice(0, 12);
+  for (const e of epicos.slice(12)) if (estado.epicos.has(e.valor)) visiveis.push(e);
+  em('#grafico-epicos', (largura) => barrasHorizontais(visiveis, { dim: 'epicos', largura }));
+
+  // o cartao semanal vem do mesmo bloco de produtividade que monta a tabela ao
+  // lado; um servidor antigo responde sem ele (ver renderizarProdutividade)
+  const semanas = d.produtividadeSemanal?.semanas ?? [];
+  em('#grafico-semanas', (largura) => (semanas.length
+    ? barrasVerticais(
+      semanas.map((s) => ({
+        rotulo: rotuloSemana(s.inicio, s.fim),
+        valor: s.inicio,
+        total: s.total,
+        parcial: s.parcial,
+        dica: `${semanaPorExtenso(s.inicio, s.fim)}: ${s.total} concluída(s)`
+          + (s.parcial ? ' — semana em curso' : ''),
+      })),
+      // a semana em curso sai mais clara: ela ainda vai crescer, e uma barra
+      // cheia ao lado das fechadas leria como queda
+      { dim: 'semana', cor: (_, ponto) => (ponto.parcial ? '#a9cd8a' : PALETA[2]), largura },
+    )
+    : vazio('Indisponível.')));
+}
+
 function renderizar(d, detalhe) {
   const i = d.indicadores;
 
@@ -760,26 +932,8 @@ function renderizar(d, detalhe) {
   montarSlicer($('#slicer-epicos'), d.opcoes.epicos ?? [], estado.epicos, contEpico);
   montarSlicer($('#slicer-responsaveis'), d.opcoes.responsaveis, estado.responsaveis, contResp);
 
-  $('#grafico-status').innerHTML = barrasVerticais(
-    [...d.porStatus].sort((a, b) => a.rotulo.localeCompare(b.rotulo, 'pt-BR')),
-    { cor: corStatus, dim: 'status' },
-  );
-  $('#grafico-responsaveis').innerHTML = pizza(d.concluidasPorResponsavel, { dim: 'responsaveis' });
-  $('#grafico-espacos').innerHTML = barrasHorizontais(
-    [...d.porEspaco].sort((a, b) => a.rotulo.localeCompare(b.rotulo, 'pt-BR')),
-    { dim: 'espacos' },
-  );
-  $('#grafico-mensal').innerHTML = barrasAgrupadas(d.serieMensal);
   renderizarProdutividade(d.produtividadeSemanal);
-  $('#grafico-tipos').innerHTML = barrasHorizontais(d.porTipo, { cor: () => PALETA[0], dim: 'tipos' });
-  $('#grafico-prioridades').innerHTML = barrasHorizontais(d.porPrioridade, { dim: 'prioridades' });
-  // so os 12 maiores: a lista inteira de epicos nao cabe num grafico de barras.
-  // O que estiver selecionado entra de todo jeito, senão sumiria da tela sem
-  // dar como desmarcar
-  const epicos = d.porEpico ?? [];
-  const visiveis = epicos.slice(0, 12);
-  for (const e of epicos.slice(12)) if (estado.epicos.has(e.valor)) visiveis.push(e);
-  $('#grafico-epicos').innerHTML = barrasHorizontais(visiveis, { dim: 'epicos' });
+  desenharGraficos();
 
   $('#panorama').innerHTML = [
     ['A fazer', num(i.aFazer)],
@@ -1208,6 +1362,15 @@ async function iniciar() {
 
   $('#btn-pdf').addEventListener('click', () => window.print());
   $('#btn-excel').addEventListener('click', exportarExcel);
+
+  // A largura do cartão faz parte do desenho (ver desenharGraficos): mudar o
+  // tamanho da janela — ou virar o celular — pede os gráficos de novo. Só
+  // depois que ela para, senão seria um redesenho por pixel arrastado.
+  let redesenho;
+  addEventListener('resize', () => {
+    clearTimeout(redesenho);
+    redesenho = setTimeout(desenharGraficos, 180);
+  });
 
   const modal = $('#modal');
   $('#btn-importar').addEventListener('click', () => modal.classList.remove('oculto'));
