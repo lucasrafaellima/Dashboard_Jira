@@ -97,6 +97,18 @@ const DIA_MS = 86400000;
 const SEMANAS_COMPARADAS = 8;
 
 /**
+ * A semana do painel e a semana **util**: segunda a sexta. Vale para o cartao de
+ * produtividade, para o grafico de concluidas por semana e para o burndown — os
+ * tres falam do mesmo intervalo, e trocar aqui troca nos tres.
+ *
+ * Isso mede o **rotulo e a janela de comparacao**, nao a filtragem: o que fecha
+ * no sabado ou no domingo continua entrando na semana que acabou (ver
+ * `inicioDaSemana`). Sao 3,9% das conclusoes da base, todas com data de
+ * conclusao propria — descarta-las apagaria entrega de gente que trabalhou.
+ */
+const DIAS_UTEIS = 5;
+
+/**
  * Teto de semanas quando a janela sai do filtro de datas.
  *
  * Um recorte de dois anos viraria 100 barras de 7px com o rotulo de cada uma
@@ -110,9 +122,13 @@ const somarDias = (dia, n) => new Date(Date.parse(`${dia}T00:00:00Z`) + n * DIA_
   .toISOString().slice(0, 10);
 
 /**
- * Segunda-feira da semana de um dia, como "aaaa-mm-dd".
- * Semana de segunda a domingo — e o que a operacao entende por "essa semana",
- * e nao a semana do domingo que o `getDay()` do JS usa.
+ * Segunda-feira da semana de um dia, como "aaaa-mm-dd" — e nao a semana do
+ * domingo que o `getDay()` do JS usa.
+ *
+ * Sabado e domingo caem na segunda **da propria semana**, e e de proposito: a
+ * semana que a tela mostra e util (segunda a sexta, ver `DIAS_UTEIS`), mas o que
+ * alguem concluiu no fim de semana pertence a semana que estava acabando, e nao
+ * a lugar nenhum.
  */
 function inicioDaSemana(dia) {
   const d = new Date(`${soDia(dia)}T00:00:00Z`);
@@ -234,7 +250,9 @@ function janelaDeSemanas(eventos, { de: dePleno, ate: atePleno, semanas }) {
   return {
     inicios,
     primeiroDia: inicios[0],
-    // a janela que recuou termina na semana fechada; a de hoje termina hoje
+    // A janela que recuou termina na semana fechada; a de hoje termina hoje.
+    // Fechada e ate domingo, e nao ate sexta: a semana que a tela mostra e util,
+    // mas o que fechou no fim de semana conta nela (ver `inicioDaSemana`).
     ultimoDia: emCurso ? hoje : somarDias(ancora, 6),
     emCurso,
     filtrada: false,
@@ -251,13 +269,19 @@ function janelaDeSemanas(eventos, { de: dePleno, ate: atePleno, semanas }) {
  *   - **a janela segue o filtro de datas**. Recortou um periodo, o cartao passa
  *     a falar so dele (ver `janelaDeSemanas`). Sem recorte, o rabo padrao de
  *     oito semanas.
+ *   - **a semana e util: segunda a sexta** (ver `DIAS_UTEIS`). E o que a
+ *     operacao chama de semana, e o mesmo intervalo do burndown ao lado. O que
+ *     alguem concluiu no sabado ou no domingo continua contando na semana que
+ *     acabou — o fim de semana muda o rotulo e a conta de dias, nao a
+ *     populacao. Sao poucas conclusoes, mas sao reais, e sumir com elas
+ *     zeraria o numero de quem plantao fechou.
  *   - **semana pela metade e comparada pela metade**. Comparar uma terca-feira
  *     com uma semana inteira acusaria queda de 60% toda segunda. Quando a
  *     ultima semana da janela nao esta fechada — porque ainda esta correndo ou
  *     porque o filtro cortou no meio dela — a comparacao e contra o **mesmo
- *     trecho** da semana anterior (do inicio ate o mesmo dia da semana), e e
- *     isso que `comparavel` guarda. `anterior` continua trazendo a semana
- *     anterior cheia, para quem quiser o numero fechado.
+ *     trecho** da semana anterior (do inicio ate o mesmo dia util), e e isso que
+ *     `comparavel` guarda. `anterior` continua trazendo a semana anterior
+ *     cheia, para quem quiser o numero fechado.
  *   - **conclusao e o que conta**. Produtividade aqui e entrega, entao o item
  *     entra na semana em que foi concluido (ver `dataDeConclusao`), nao na
  *     semana em que nasceu.
@@ -283,9 +307,13 @@ function produtividadeSemanal(concluidas, concluidasDoFiltro = concluidas, opcoe
   const posicao = new Map(inicios.map((s, i) => [s, i]));
   const ultima = inicios.length - 1;
 
-  // dias ja cobertos da ultima semana (1 = so a segunda-feira); 7 = semana cheia
-  const decorridos = Math.min(7, Math.max(1, distanciaEmDias(inicios[ultima], ultimoDia) + 1));
-  const parcial = decorridos < 7;
+  // Dias uteis ja cobertos da ultima semana (1 = so a segunda-feira); 5 = semana
+  // cheia. O fim de semana nao estica a conta: chegando no sabado a semana util
+  // ja fechou, e comparar uma sexta com uma "semana de seis dias" nao existe.
+  const decorridos = Math.min(
+    DIAS_UTEIS, Math.max(1, distanciaEmDias(inicios[ultima], ultimoDia) + 1),
+  );
+  const parcial = decorridos < DIAS_UTEIS;
   // limite (exclusivo) do trecho equivalente na semana anterior
   const limiteAnterior = ultima > 0 ? somarDias(inicios[ultima - 1], decorridos) : null;
 
@@ -334,7 +362,7 @@ function produtividadeSemanal(concluidas, concluidasDoFiltro = concluidas, opcoe
 
   return {
     semanas: inicios.map((inicio, i) => {
-      const fim = somarDias(inicio, 6);
+      const fim = somarDias(inicio, DIAS_UTEIS - 1);
       return {
         inicio,
         fim,
@@ -359,7 +387,7 @@ function produtividadeSemanal(concluidas, concluidasDoFiltro = concluidas, opcoe
       parcial,
       decorridos,
       inicio: inicios[ultima],
-      fim: somarDias(inicios[ultima], 6),
+      fim: somarDias(inicios[ultima], DIAS_UTEIS - 1),
       // Sem base de comparacao em dois casos, e nos dois a tela mostra "—" em
       // vez de inventar "+100%" contra o zero: o intervalo cabe numa semana so,
       // ou a semana anterior entra cortada pela borda do intervalo — comparar
@@ -370,6 +398,100 @@ function produtividadeSemanal(concluidas, concluidasDoFiltro = concluidas, opcoe
       primeiroDia,
       ultimoDia,
     },
+  };
+}
+
+// ------------------------------------------------------------ burndown semanal
+
+/**
+ * Burndown da semana — quanto trabalho ainda estava aberto no fim de cada dia,
+ * de segunda a sexta, contra a reta que zeraria a fila na sexta.
+ *
+ * As decisoes que mudam o desenho, explicitas porque burndown e um grafico que
+ * cada time monta de um jeito:
+ *
+ *   - **a reta parte de onde a semana comecou de fato**: a fila no fim da
+ *     segunda. As duas linhas nascem juntas, e a partir dai a distancia entre
+ *     elas e a leitura inteira do cartao.
+ *
+ *     A alternativa — partir do escopo cheio da semana, com o que entrou depois
+ *     ja embutido — foi testada e mente: num balcao de chamados a maior parte do
+ *     que se fecha na semana tambem nasce nela, entao a reta comecaria muito
+ *     acima da linha real e o time apareceria adiantado de segunda a quinta,
+ *     ainda que terminasse a sexta com a fila do mesmo tamanho.
+ *   - **o que entra depois empurra a linha real para cima**, e e assim que se
+ *     ve a fila crescendo mais rapido do que se entrega. Por isso `novas` e um
+ *     numero do cartao: sem ele, uma linha que nao cai parece falta de entrega
+ *     quando pode ser excesso de chegada.
+ *   - **a linha real e o fim do dia**: um item aberto e fechado na terca some do
+ *     ponto de terca em diante. Dia que ainda nao chegou vem com `restante:
+ *     null` — a tela para a linha em hoje em vez de despencar para zero.
+ *   - **o escopo e o trabalho tocado na semana**: o que estava aberto na segunda
+ *     mais o que nasceu ate sexta. Item que ja tinha fechado antes da segunda
+ *     fica de fora, e item que so nasce depois da sexta tambem.
+ *   - **a semana e a mesma do cartao de produtividade** (ver `janelaDeSemanas`):
+ *     sem filtro de datas, a semana corrente; com filtro, a ultima do intervalo.
+ *
+ * @param {object[]} base itens ja recortados pelos filtros (menos o de status)
+ * @param {object} opcoes `{ inicio }` a segunda-feira da semana, "aaaa-mm-dd"
+ */
+function burndownSemanal(base, { inicio, incluirCancelados }) {
+  const hoje = new Date().toISOString().slice(0, 10);
+  const dias = Array.from({ length: DIAS_UTEIS }, (_, i) => somarDias(inicio, i));
+  const sexta = dias[DIAS_UTEIS - 1];
+
+  // cada item vira so o par de datas que o burndown usa
+  const escopo = [];
+  for (const it of base) {
+    const nasceu = it.criado ? soDia(it.criado) : null;
+    if (!nasceu || nasceu > sexta) continue;
+    const fim = ehConcluida(it.status, incluirCancelados) ? dataDeConclusao(it) : null;
+    const fechou = fim ? soDia(fim) : null;
+    if (fechou && fechou < inicio) continue;
+    escopo.push({ nasceu, fechou });
+  }
+
+  /** O que ainda estava aberto no fim de `dia`. */
+  const restanteEm = (dia) => escopo.filter(
+    (e) => e.nasceu <= dia && !(e.fechou && e.fechou <= dia),
+  ).length;
+
+  // De onde a reta parte. Sai daqui, e nao de `dias[0].restante`, porque uma
+  // semana inteira no futuro (o filtro de datas aceita) nao tem dia decorrido
+  // nenhum — e mesmo assim a fila de hoje ja e um ponto de partida legitimo.
+  const partida = restanteEm(dias[0]);
+
+  const serie = dias.map((dia, i) => {
+    const futuro = dia > hoje;
+    return {
+      dia,
+      ideal: +(partida * ((DIAS_UTEIS - 1 - i) / (DIAS_UTEIS - 1))).toFixed(1),
+      restante: futuro ? null : restanteEm(dia),
+      concluidas: futuro ? null : escopo.filter((e) => e.fechou === dia).length,
+      criadas: futuro ? null : escopo.filter((e) => e.nasceu === dia).length,
+      futuro,
+    };
+  });
+
+  const decorridos = serie.filter((d) => !d.futuro);
+  const ultimo = decorridos[decorridos.length - 1] ?? null;
+  const herdado = escopo.filter((e) => e.nasceu < inicio).length;
+
+  return {
+    inicio,
+    fim: sexta,
+    escopo: escopo.length,
+    // o que ja vinha aberto de antes e o que nasceu dentro da semana
+    herdado,
+    novas: escopo.length - herdado,
+    partida,
+    dias: serie,
+    concluidas: decorridos.reduce((s, d) => s + d.concluidas, 0),
+    restante: ultimo ? ultimo.restante : partida,
+    // sobra acima da reta = atrasado; abaixo = adiantado
+    desvio: ultimo ? +(ultimo.restante - ultimo.ideal).toFixed(1) : 0,
+    ultimoDia: ultimo ? ultimo.dia : null,
+    emCurso: inicio <= hoje && hoje <= sexta,
   };
 }
 
@@ -525,6 +647,22 @@ export function montarDashboard(fonte, filtros = {}) {
   const datas = itens.map((it) => it.criado).filter(Boolean).sort();
   const importacoes = fonte.importacoes;
 
+  // O filtro de **datas** vale aqui nos dois conjuntos, e a janela de semanas
+  // passa a ser o proprio intervalo (ver `janelaDeSemanas`) — sem recorte, o
+  // rabo padrao de oito semanas. Ja o de **responsaveis** vale so no segundo:
+  // o ranking (1o) traz todo mundo, porque e por ele que se troca a selecao;
+  // os totais por semana e o resumo (2o) seguem quem estiver selecionado.
+  // Espaco, epico, tipo e prioridade continuam valendo nos dois.
+  const semanal = produtividadeSemanal(
+    separarPorPeriodo(
+      aplicarRecortes(todos, { ...filtros, responsaveis: [] }),
+      filtros,
+      incluirCancelados,
+    ).concluidas,
+    concluidas,
+    { de: filtros.de ?? null, ate: filtros.ate ?? null },
+  );
+
   // cada gráfico é também um filtro, então cada um ignora o próprio recorte
   const semDim = (dim, contar) => porDimensao(todos, filtros, incluirCancelados, dim, contar);
   // a evolução mensal ignora o período: é por ela que se pula de um mês para
@@ -592,20 +730,17 @@ export function montarDashboard(fonte, filtros = {}) {
       'responsaveis', (c) => ordenarResponsaveis(contarPor(c.criadas, 'responsavel')),
     ),
     serieMensal: serieMensal(semData.criadas, semData.concluidas),
-    // O filtro de **datas** vale aqui nos dois conjuntos, e a janela de semanas
-    // passa a ser o proprio intervalo (ver `janelaDeSemanas`) — sem recorte, o
-    // rabo padrao de oito semanas. Ja o de **responsaveis** vale so no segundo:
-    // o ranking (1o) traz todo mundo, porque e por ele que se troca a selecao;
-    // os totais por semana e o resumo (2o) seguem quem estiver selecionado.
-    // Espaco, epico, tipo e prioridade continuam valendo nos dois.
-    produtividadeSemanal: produtividadeSemanal(
-      separarPorPeriodo(
-        aplicarRecortes(todos, { ...filtros, responsaveis: [] }),
-        filtros,
-        incluirCancelados,
-      ).concluidas,
-      concluidas,
-      { de: filtros.de ?? null, ate: filtros.ate ?? null },
+    produtividadeSemanal: semanal,
+    // Mesma semana do cartao de produtividade — a ultima da janela. Duas
+    // diferencas na populacao, e as duas de proposito:
+    //   - o **periodo** nao vale: um item aberto em julho e ainda pendente pesa
+    //     no burndown de agosto, e a data de criacao dele esta fora do recorte;
+    //   - o filtro de **status** nao vale: o grafico e feito de aberto contra
+    //     concluido, e recortar por status responderia sozinho a pergunta.
+    // Espaco, epico, responsavel, tipo e prioridade continuam valendo.
+    burndown: burndownSemanal(
+      aplicarRecortes(todos, { ...filtros, status: [] }),
+      { inicio: semanal.resumo.inicio, incluirCancelados },
     ),
     tempoDeConclusao: tempoDeConclusao(concluidas),
     padronizacao: padronizacaoAplicada(itens),

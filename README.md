@@ -200,7 +200,8 @@ sem precisar de uma sincronização completa.
 - **KPIs**: atividades criadas, concluídas e taxa de conclusão.
 - **Produtividade semanal por colaborador** — ranking das conclusões da semana com o
   comparativo das semanas anteriores (detalhes [abaixo](#produtividade-semanal-por-colaborador)).
-- **Extras**: evolução mensal (criadas × concluídas), por tipo, por prioridade, tempo médio/mediano até concluir, itens sem responsável, itens com data limite vencida, e a tabela detalhada.
+- **Burndown da semana** — de segunda a sexta (detalhes [abaixo](#burndown-da-semana)).
+- **Extras**: evolução mensal (criadas × concluídas), tickets por épico, tempo médio/mediano até concluir, itens sem responsável, itens com data limite vencida, e a tabela detalhada.
 - Botão **PDF** usa a impressão do navegador, mas o que sai é um relatório, não uma foto da tela:
   - **A4 paisagem**, com capa (período coberto, filtros aplicados, data de geração e site do Jira
     de origem) e rodapé repetido em todas as páginas;
@@ -221,20 +222,28 @@ sem precisar de uma sincronização completa.
 
 ### Produtividade semanal por colaborador
 
-Mostra quantas atividades cada pessoa **concluiu** em cada semana da janela (de segunda a
-domingo) e compara a última semana com a anterior. Sem filtro de datas a janela são as **8
+Mostra quantas atividades cada pessoa **concluiu** em cada semana da janela (de **segunda a
+sexta**) e compara a última semana com a anterior. Sem filtro de datas a janela são as **8
 últimas semanas**; com filtro, ela vira o **próprio intervalo** (veja abaixo). Ao lado, o
 gráfico **Concluídas por semana** traz o total da equipe; clicar numa barra recorta o
 período naquela semana, do mesmo jeito que clicar num mês na evolução mensal.
 
-Três coisas mudam a leitura do número e por isso ficam ditas na tela:
+Quatro coisas mudam a leitura do número e por isso ficam ditas na tela:
 
+- **A semana é útil, mas o fim de semana não some.** O rótulo e a contagem de dias vão de
+  segunda a sexta — é o que a operação chama de semana, e o mesmo intervalo do burndown ao
+  lado. O que alguém concluiu no sábado ou no domingo continua contando **na semana que
+  acabou**: são poucas conclusões (3,9% da base), mas todas com data de conclusão própria, e
+  descartá-las zeraria o número de quem fechou chamado de plantão. Por isso clicar numa
+  barra de *Concluídas por semana* recorta o período até domingo, e não até sexta — senão o
+  cartão diria um número e a tabela lá embaixo, outro.
 - **Semana pela metade é comparada pela metade.** Comparar uma terça-feira com uma semana
   inteira acusaria queda toda segunda. Enquanto a última semana não fecha — porque ainda
   está correndo ou porque o filtro de datas cortou no meio dela — a comparação é contra o
-  **mesmo trecho** da semana anterior (do começo dela até o mesmo dia da semana), e é o que
-  a coluna *Mesmo trecho anterior* traz. A faixa de indicadores guarda no `title` quanto a
-  semana anterior fechou, para quem quiser o número cheio.
+  **mesmo trecho** da semana anterior (do começo dela até o mesmo dia útil), e é o que
+  a coluna *Mesmo trecho anterior* traz. Chegando no sábado a semana já conta como fechada:
+  os cinco dias úteis passaram. A faixa de indicadores guarda no `title` quanto a semana
+  anterior fechou, para quem quiser o número cheio.
 - **Conta a data de conclusão**, não a de criação: uma atividade aberta há um mês e fechada
   ontem é produtividade de ontem.
 - **A variação vem com o absoluto junto** (`▲ +100% (+1)`). Sozinho, o percentual mente de
@@ -263,6 +272,33 @@ prioridade valem normalmente. Três consequências:
 Sem filtro de período e com a base parada (sem sincronização há semanas), a janela recua até
 a última semana com entregas em vez de mostrar oito semanas zeradas — a nota embaixo do
 cartão também avisa quando isso acontece.
+
+### Burndown da semana
+
+Quanto trabalho ainda estava **em aberto no fim de cada dia**, de segunda a sexta, contra a
+reta que zeraria a fila na sexta-feira.
+
+- **A reta parte da fila do fim da segunda** e desce até zero na sexta. As duas linhas nascem
+  no mesmo ponto, e daí em diante a distância entre elas é a leitura inteira do cartão.
+  Partir do escopo cheio da semana (com o que entrou depois já embutido) foi testado e mente:
+  num balcão de chamados a maior parte do que se fecha na semana também nasce nela, então a
+  reta começaria muito acima da linha real e o time apareceria adiantado de segunda a quinta
+  mesmo terminando a sexta com a fila do mesmo tamanho.
+- **O que entra depois empurra a linha para cima** — é assim que se vê a fila crescendo mais
+  rápido do que se entrega. Por isso *Novas na semana* é um dos números do cartão: sem ele,
+  uma linha que não cai parece falta de entrega quando pode ser excesso de chegada.
+- **A linha real é o fim do dia.** Uma atividade aberta e fechada na terça some do ponto de
+  terça em diante. Dia que ainda não chegou não vira ponto — a linha para em hoje, em vez de
+  despencar até zero e fingir semana concluída numa terça.
+- **Ponto acima da reta sai vermelho**: é sobra acumulada, o sinal de que a semana não zera
+  no ritmo atual. O indicador “contra o ritmo ideal” diz de quantas atividades é a diferença.
+- **A semana é a mesma do cartão de produtividade** — sem filtro de datas, a semana corrente;
+  com filtro, a última do intervalo. Clicar numa barra de *Concluídas por semana* traz o
+  burndown para aquela semana.
+- **Período e status não filtram este gráfico.** O período, porque o burndown precisa das
+  atividades abertas antes do recorte; o status, porque o gráfico é feito de aberto contra
+  concluído e recortar por status responderia sozinho a pergunta. Espaço, épico, responsável,
+  tipo e prioridade valem normalmente.
 
 ### O que conta como concluída
 

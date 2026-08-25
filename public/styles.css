@@ -66,7 +66,8 @@ input[type="date"] {
 .linha-1 { grid-template-columns: 190px 230px 200px 1fr; }
 .linha-2 { grid-template-columns: 1fr 1fr 190px; }
 .linha-3 { grid-template-columns: 2fr 1fr; }
-.linha-4 { grid-template-columns: 1fr 1fr 1fr; }
+/* o burndown é um gráfico de linha e pede largura; a lista de épicos, não */
+.linha-4 { grid-template-columns: 3fr 2fr; }
 .linha-5 { grid-template-columns: 2fr 1fr; }
 
 @media (max-width: 1150px) {
@@ -208,6 +209,18 @@ td.faisca-celula { width: 118px; padding-top: 4px; padding-bottom: 2px; }
 }
 .grade { stroke: #e3eaf3; stroke-width: 1; }
 .legenda { fill: var(--texto); font-size: 12.5px; }
+
+/* burndown: a linha cheia é o que restou, a pontilhada é a reta de referência.
+   A reta é traço, e não uma cor mais clara, porque no papel em preto e branco
+   duas linhas de mesmo tipo viram a mesma linha. */
+.linha-real {
+  fill: none; stroke: #4472c4; stroke-width: 2.5;
+  stroke-linejoin: round; stroke-linecap: round;
+}
+.linha-ideal { fill: none; stroke: #9aa7b6; stroke-width: 2; stroke-dasharray: 6 5; }
+/* o dia que ainda não chegou fica no eixo, mas apagado: mostra até onde a
+   semana vai sem sugerir que já tem número */
+.dia-futuro { opacity: .45; }
 
 /* ------------------------------------------------- graficos como filtro
 
@@ -523,8 +536,7 @@ body.travado { overflow: hidden; }
   #card-semanas            { grid-column: span 2; order: 9; }
   #card-pizza              { grid-column: span 3; order: 10; }
   #card-espacos            { grid-column: span 3; order: 11; }
-  #card-tipos              { grid-column: span 3; order: 12; }
-  #card-prioridades        { grid-column: span 3; order: 13; }
+  #card-burndown           { grid-column: span 6; order: 12; }
   #card-epicos             { grid-column: span 6; order: 14; }
   #secao-padronizacao      { grid-column: span 6; order: 15; }
 

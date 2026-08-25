@@ -490,6 +490,163 @@ function barrasAgrupadas(serie, { largura } = {}) {
   return svg(L, A, saida);
 }
 
+// ------------------------------------------------------------ burndown semanal
+
+const DIAS_UTEIS_CURTOS = ['seg', 'ter', 'qua', 'qui', 'sex'];
+
+/** Rotulo do eixo do burndown: "seg 25/08". */
+const rotuloDiaUtil = (iso, i) => `${DIAS_UTEIS_CURTOS[i] ?? ''} ${iso.slice(8)}/${iso.slice(5, 7)}`;
+
+/** Dia por extenso, para os tooltips: "segunda, 25/08". */
+const DIAS_UTEIS_LONGOS = ['segunda', 'terça', 'quarta', 'quinta', 'sexta'];
+const diaPorExtenso = (iso, i) => `${DIAS_UTEIS_LONGOS[i] ?? ''}, ${iso.slice(8)}/${iso.slice(5, 7)}`;
+
+/**
+ * Burndown da semana: duas linhas de segunda a sexta.
+ *
+ * A **real** é o que ainda estava aberto no fim de cada dia; a **ideal** é a
+ * reta que zeraria o escopo da semana na sexta. Ponto acima da reta é sobra
+ * acumulada, e sai vermelho — é a única leitura que o gráfico precisa entregar
+ * de relance.
+ *
+ * Dia que ainda não chegou não vira ponto: a linha real para em hoje. Desenhar
+ * o resto da semana levaria a curva a zero na sexta e leria como semana
+ * concluída numa terça-feira.
+ *
+ * Não filtra nada ao ser clicado — o dia não é uma dimensão do painel, e a
+ * semana já se troca pelo gráfico "Concluídas por semana" ao lado.
+ */
+function linhaBurndown(b, { largura } = {}) {
+  if (!b?.dias?.length) return vazio('Indisponível — reinicie o servidor para carregar esta métrica.');
+  if (!b.escopo) return vazio('Nenhuma atividade aberta nesta semana para os filtros selecionados.');
+
+  const L = largura ?? 620;
+  // o topo abre espaço para a legenda; embaixo cabe o rótulo do dia numa linha
+  const margem = { top: 42, dir: 18, baixo: 34, esq: 52 };
+  const alturaUtil = ALTURA_PLOTAGEM;
+  const A = margem.top + alturaUtil + margem.baixo;
+  const larguraUtil = L - margem.esq - margem.dir;
+  const max = topoEixo(Math.max(1, b.partida ?? 0, ...b.dias.map((d) => d.restante ?? 0)));
+  const passo = larguraUtil / (b.dias.length - 1);
+  const px = (i) => margem.esq + passo * i;
+  const py = (v) => margem.top + alturaUtil - (v / max) * alturaUtil;
+
+  let saida = '';
+  for (let i = 0; i <= 5; i++) {
+    const v = (max / 5) * i;
+    const y = py(v);
+    saida += `<line class="grade" x1="${margem.esq}" y1="${y}" x2="${L - margem.dir}" y2="${y}"/>`;
+    saida += `<text class="eixo" x="${margem.esq - 9}" y="${y + 4}" text-anchor="end">${Math.round(v)}</text>`;
+  }
+
+  // a reta de referência vai embaixo, para os pontos da real ficarem por cima
+  const ideal = b.dias.map((d, i) => `${px(i).toFixed(1)},${py(d.ideal).toFixed(1)}`).join(' ');
+  saida += `<polyline class="linha-ideal surge" points="${ideal}"/>`;
+
+  const reais = b.dias
+    .map((d, i) => ({ ...d, i }))
+    .filter((d) => d.restante != null);
+  if (reais.length > 1) {
+    const pontos = reais.map((d) => `${px(d.i).toFixed(1)},${py(d.restante).toFixed(1)}`).join(' ');
+    saida += `<polyline class="linha-real surge" points="${pontos}"/>`;
+  }
+
+  b.dias.forEach((d, i) => {
+    const x = px(i);
+    const dica = d.futuro
+      ? `${diaPorExtenso(d.dia, i)} — ainda não chegou`
+      : `${diaPorExtenso(d.dia, i)} — restavam ${d.restante}`
+        + ` · ${d.concluidas} concluída(s), ${d.criadas} nova(s)`
+        + ` · a reta previa ${String(d.ideal).replace('.', ',')}`;
+
+    // faixa invisível na coluna inteira: o tooltip pega o dia todo, e não só o
+    // ponto de 5px
+    let bloco = `<rect x="${(x - passo / 2).toFixed(1)}" y="${margem.top}" width="${passo.toFixed(1)}"`
+      + ` height="${alturaUtil}" fill="transparent"><title>${esc(dica)}</title></rect>`;
+
+    if (!d.futuro) {
+      // acima da reta é sobra: o ponto muda de cor para a semana atrasada saltar
+      const cor = d.restante > d.ideal ? PALETA[1] : PALETA[0];
+      const y = py(d.restante);
+      bloco += `<circle class="surge" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="4.5" fill="${cor}"`
+        + `${atraso(i)}><title>${esc(dica)}</title></circle>`;
+      bloco += `<text class="rotulo-valor surge" x="${x.toFixed(1)}" y="${(y - 11).toFixed(1)}"`
+        + ` text-anchor="middle"${atraso(i)}>${d.restante}</text>`;
+    }
+
+    const classes = ['eixo', 'surge', d.futuro ? 'dia-futuro' : ''].filter(Boolean).join(' ');
+    bloco += `<text class="${classes}" x="${x.toFixed(1)}" y="${margem.top + alturaUtil + 20}"`
+      + ` text-anchor="middle"${atraso(i)}>${esc(rotuloDiaUtil(d.dia, i))}</text>`;
+    saida += grupo(bloco);
+  });
+
+  saida += `<line class="linha-real" x1="${margem.esq}" y1="14" x2="${margem.esq + 22}" y2="14"/>`
+    + `<text class="legenda" x="${margem.esq + 28}" y="18">em aberto</text>`
+    + `<line class="linha-ideal" x1="${margem.esq + 118}" y1="14" x2="${margem.esq + 140}" y2="14"/>`
+    + `<text class="legenda" x="${margem.esq + 146}" y="18">ritmo ideal</text>`;
+
+  saida += `<line class="grade" x1="${margem.esq}" y1="${py(0)}" x2="${L - margem.dir}" y2="${py(0)}" stroke="#9db4cf"/>`;
+  return svg(L, A, saida);
+}
+
+/** Faixa de indicadores e nota do cartão de burndown. */
+function renderizarBurndown(b) {
+  const semana = $('#burndown-semana');
+  const kpis = $('#burndown-kpis');
+  const nota = $('#burndown-nota');
+
+  if (!b?.dias?.length) {
+    semana.textContent = '';
+    kpis.innerHTML = '';
+    nota.textContent = 'Indisponível — reinicie o servidor para carregar esta métrica.';
+    return;
+  }
+
+  semana.textContent = `— ${semanaPorExtenso(b.inicio, b.fim)}`
+    + (b.emCurso ? ' (em curso)' : '');
+
+  // adiantado é sobrar menos do que a reta previa para o mesmo dia
+  const desvio = b.desvio;
+  const pilula = !b.ultimoDia || Math.abs(desvio) < 0.05
+    ? '<span class="variacao estavel">no ritmo</span>'
+    : `<span class="variacao ${desvio > 0 ? 'cai' : 'sobe'}">${desvio > 0 ? '▲' : '▼'}`
+      + ` ${String(Math.abs(desvio)).replace('.', ',')}</span>`;
+
+  const ultimo = b.ultimoDia
+    ? diaPorExtenso(b.ultimoDia, b.dias.findIndex((d) => d.dia === b.ultimoDia))
+    : null;
+
+  kpis.innerHTML = [
+    ['Fila na segunda', num(b.partida),
+      `O que estava aberto no fim da segunda — é daqui que a reta parte.`
+      + ` ${num(b.herdado)} vinham de antes da semana`],
+    ['Novas na semana', num(b.novas ?? 0),
+      'Atividades criadas de segunda a sexta: é o que empurra a linha para cima'],
+    ['Concluídas', num(b.concluidas), 'Atividades da semana fechadas entre segunda e sexta'],
+    ['Em aberto', num(b.restante),
+      ultimo ? `O que restava no fim de ${ultimo}` : 'A semana ainda não começou'],
+    ['Contra o ritmo ideal', pilula,
+      desvio > 0
+        ? 'Sobra acima da reta: nesse passo a fila não zera na sexta'
+        : 'Sobra abaixo da reta: a semana está adiantada'],
+  ]
+    .map(([r, v, dica]) => `<li title="${esc(dica)}"><b>${v}</b><span>${r}</span></li>`)
+    .join('');
+
+  nota.textContent = [
+    'A linha cheia é o que ainda estava em aberto no fim de cada dia; a pontilhada é a reta que'
+      + ' zeraria na sexta a fila do fim da segunda. As duas partem do mesmo ponto: o que entra'
+      + ' depois empurra a linha cheia para cima da reta.',
+    b.emCurso
+      ? 'A semana ainda corre: a linha para no último dia fechado e os dias à frente ficam sem ponto.'
+      : null,
+    'A semana é a mesma do cartão de produtividade — clique numa barra de "Concluídas por semana"'
+      + ' para trazer o burndown para outra semana.',
+    'Espaço, épico, responsável, tipo e prioridade valem aqui; período e status, não — o gráfico'
+      + ' precisa das atividades abertas antes do recorte, e é feito de aberto contra concluído.',
+  ].filter(Boolean).join(' ');
+}
+
 // -------------------------------------------------------- produtividade semanal
 
 /**
@@ -582,7 +739,7 @@ function renderizarProdutividade(p) {
 
   $('#produtividade-semana').textContent =
     `— semana de ${semanaPorExtenso(resumo.inicio, resumo.fim)}`
-    + (parcial ? ` (${resumo.decorridos} de 7 dias corridos)` : '')
+    + (parcial ? ` (${resumo.decorridos} de 5 dias úteis)` : '')
     + (recorte ? ` · indicadores de ${recorte}` : '');
 
   // com o período filtrado a "semana atual" é a última do intervalo, não a de hoje
@@ -606,7 +763,7 @@ function renderizarProdutividade(p) {
 
   $('#th-comparavel').textContent = parcial ? 'Mesmo trecho anterior' : 'Semana anterior';
   $('#th-comparavel').title = parcial
-    ? 'A última semana não fechou: a comparação usa a semana anterior só até o mesmo dia'
+    ? 'A última semana não fechou: a comparação usa a semana anterior só até o mesmo dia útil'
     : 'Semana anterior fechada';
 
   const temSelecao = estado.responsaveis.size > 0;
@@ -633,7 +790,8 @@ function renderizarProdutividade(p) {
   $('#produtividade-nota').textContent = [
     `Cada atividade entra na semana em que foi concluída. Janela de`
       + ` ${semanas.length === 1 ? '1 semana' : `${semanas.length} semanas`}`
-      + ` (${janela}), de segunda a domingo.`,
+      + ` (${janela}), de segunda a sexta — o que fecha no sábado ou no domingo`
+      + ' conta na semana que acabou.',
     'O ranking traz sempre todo mundo, mesmo com alguém selecionado — é por ele que se troca a'
       + ' seleção. Os indicadores acima e o gráfico ao lado seguem quem estiver marcado.',
     resumo.filtrada
@@ -739,7 +897,15 @@ function alternarMes(ym) {
   $('#ate').value = estado.ate;
 }
 
-/** Clicar numa semana recorta o período nela (segunda a domingo); de novo, desfaz. */
+/**
+ * Clicar numa semana recorta o período nela; clicar de novo, desfaz.
+ *
+ * O recorte vai até **domingo**, embora a semana mostrada seja de segunda a
+ * sexta: o que foi concluído no fim de semana conta na semana que acabou (ver
+ * `inicioDaSemana` em metricas.js), e um recorte que parasse na sexta deixaria
+ * essas atividades fora dos KPIs e da tabela — o cartão diria um número e a
+ * lista embaixo, outro.
+ */
 function alternarSemana(inicio) {
   const ligada = semanaSelecionada() !== inicio;
   estado.de = ligada ? inicio : '';
@@ -877,10 +1043,7 @@ function desenharGraficos() {
     { dim: 'espacos', largura },
   ));
   em('#grafico-mensal', (largura) => barrasAgrupadas(d.serieMensal, { largura }));
-  em('#grafico-tipos', (largura) =>
-    barrasHorizontais(d.porTipo, { cor: () => PALETA[0], dim: 'tipos', largura }));
-  em('#grafico-prioridades', (largura) =>
-    barrasHorizontais(d.porPrioridade, { dim: 'prioridades', largura }));
+  em('#grafico-burndown', (largura) => linhaBurndown(d.burndown, { largura }));
 
   // so os 12 maiores: a lista inteira de epicos nao cabe num grafico de barras.
   // O que estiver selecionado entra de todo jeito, senão sumiria da tela sem
@@ -933,6 +1096,7 @@ function renderizar(d, detalhe) {
   montarSlicer($('#slicer-responsaveis'), d.opcoes.responsaveis, estado.responsaveis, contResp);
 
   renderizarProdutividade(d.produtividadeSemanal);
+  renderizarBurndown(d.burndown);
   desenharGraficos();
 
   $('#panorama').innerHTML = [

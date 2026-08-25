@@ -176,13 +176,14 @@
   </section>
 
   <section class="linha linha-4">
-    <div id="card-tipos" class="cartao grafico">
-      <h2>Por tipo de item <span class="sub dica-clique">— clique para filtrar</span></h2>
-      <div id="grafico-tipos" class="area-grafico"></div>
-    </div>
-    <div id="card-prioridades" class="cartao grafico">
-      <h2>Por prioridade <span class="sub dica-clique">— clique para filtrar</span></h2>
-      <div id="grafico-prioridades" class="area-grafico"></div>
+    <div id="card-burndown" class="cartao grafico">
+      <h2>
+        Burndown da semana
+        <span id="burndown-semana" class="sub"></span>
+      </h2>
+      <ul id="burndown-kpis" class="kpis-linha"></ul>
+      <div id="grafico-burndown" class="area-grafico"></div>
+      <p id="burndown-nota" class="nota-cartao"></p>
     </div>
     <div id="card-epicos" class="cartao grafico">
       <h2>Tickets por épico <span class="sub dica-clique">— clique para filtrar</span></h2>
