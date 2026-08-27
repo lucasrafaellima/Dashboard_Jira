@@ -864,24 +864,326 @@ function montarCapaRelatorio(d, detalhe) {
     `${num(detalhe.total)} atividades no recorte · ${agora.toLocaleDateString('pt-BR')}`;
 }
 
-// ------------------------------------------------------------ slicers
+// ------------------------------------------------------- faixa de filtros
+//
+// Responsável → espaço → épico em três colunas paralelas, no alto do painel.
+// Escolher na coluna da esquerda estreita a do meio, e a do meio estreita a da
+// direita; sem escolha nenhuma cada coluna mostra o nível inteiro, somado. Os
+// dados vêm prontos em `dashboard.arvore` (ver `arvoreDeFiltros` em
+// metricas.js) — aqui só se decide o que cada coluna mostra e o que um clique
+// faz.
+
+/** As três dimensões, na ordem das colunas. O índice é o nível. */
+const NIVEIS = ['responsaveis', 'espacos', 'epicos'];
+const TITULOS = ['Responsável', 'Espaço', 'Épico'];
+
+/** Como o nível seguinte se chama, para os rótulos de "ver o que tem dentro". */
+const DENTRO = ['espaços', 'épicos'];
 
 /**
- * Cada opcao pode ser um texto (o valor e o rotulo sao a mesma coisa) ou um par
- * { valor, rotulo } — e o caso dos epicos, filtrados pela chave e exibidos com
- * o titulo junto.
+ * Em que nó cada coluna está **aberta** — o que a coluna seguinte mostra.
+ *
+ * É navegação, não recorte: abrir "Franklyn" na primeira coluna troca o que a
+ * segunda lista, mas não filtra número nenhum do painel. Por isso vive fora do
+ * `estado`, e não vai para a fonte junto com os filtros. Só os dois primeiros
+ * níveis abrem: embaixo do épico não há mais coluna.
  */
-function montarSlicer(el, opcoes, selecionadas, contagens) {
-  el.innerHTML = opcoes
-    .map((op) => {
-      const valor = typeof op === 'string' ? op : op.valor;
-      const rotulo = typeof op === 'string' ? op : op.rotulo;
-      const n = contagens.get(valor);
-      return `<li data-valor="${esc(valor)}" class="${selecionadas.has(valor) ? 'ativo' : ''}" title="${esc(rotulo)}">
-        <span>${esc(rotulo)}</span>${n != null ? `<span class="qtd">${n}</span>` : ''}
-      </li>`;
-    })
-    .join('') || '<li class="vazio-slicer">nada para selecionar</li>';
+const foco = [null, null];
+
+/** O que está digitado na busca de cada coluna, já em minúsculas. */
+const buscas = ['', '', ''];
+
+/** Épico → rótulo legível, montado a cada carga (o filtro guarda só a chave). */
+let rotulosEpico = new Map();
+
+/** Rótulos que são resto, e não uma categoria de verdade: vão para o fim. */
+const RESTO = new Set(['(vazio)', '(sem épico)']);
+
+/**
+ * Junta os filhos de uma lista de nós num nível só, somando quem se repete.
+ *
+ * É o que permite a coluna funcionar **sem** nada aberto à esquerda: sem
+ * responsável escolhido, a coluna de espaços mostra todos os espaços da base,
+ * com o total de cada um somado entre as pessoas. Com um responsável aberto, a
+ * mesma função recebe um nó só e a soma vira a conta dele.
+ */
+function juntar(nos) {
+  const mapa = new Map();
+  for (const no of nos) {
+    for (const filho of no.filhos ?? []) {
+      const atual = mapa.get(filho.valor);
+      if (atual) {
+        atual.total += filho.total;
+        atual.filhos = atual.filhos.concat(filho.filhos ?? []);
+      } else {
+        mapa.set(filho.valor, { ...filho, filhos: [...(filho.filhos ?? [])] });
+      }
+    }
+  }
+  return [...mapa.values()];
+}
+
+/** Maior primeiro; o balde de resto ("(vazio)", "(sem épico)") sempre por último. */
+function ordenar(nos) {
+  return nos.sort((a, b) => {
+    const ra = RESTO.has(a.valor);
+    const rb = RESTO.has(b.valor);
+    if (ra !== rb) return ra ? 1 : -1;
+    return b.total - a.total || a.rotulo.localeCompare(b.rotulo, 'pt-BR');
+  });
+}
+
+/**
+ * O conteúdo das três colunas, a partir da árvore e do que está aberto.
+ *
+ * Também conserta o foco: um filtro de período pode ter tirado da árvore a
+ * pessoa que estava aberta, e aí a coluna do meio ficaria vazia sem explicação.
+ * Nesse caso a abertura cai sozinha e a coluna volta a mostrar tudo.
+ */
+function colunasDe(arvore) {
+  const col0 = arvore ?? [];
+  if (foco[0] && !col0.some((n) => n.valor === foco[0])) { foco[0] = null; foco[1] = null; }
+  const escopo0 = foco[0] ? col0.filter((n) => n.valor === foco[0]) : col0;
+
+  const col1 = ordenar(juntar(escopo0));
+  if (foco[1] && !col1.some((n) => n.valor === foco[1])) foco[1] = null;
+  const escopo1 = foco[1] ? col1.filter((n) => n.valor === foco[1]) : col1;
+
+  return [col0, col1, ordenar(juntar(escopo1))];
+}
+
+/** Uma linha da coluna: barra de proporção, marca, rótulo, total e a seta. */
+function opcao(no, nivel, maior) {
+  const marcado = estado[NIVEIS[nivel]].has(no.valor);
+  const aberto = foco[nivel] === no.valor;
+  const temDentro = nivel < 2 && (no.filhos?.length ?? 0) > 0;
+
+  const classes = ['opcao', marcado ? 'ativa' : '', aberto ? 'aberta' : ''].filter(Boolean).join(' ');
+  const largura = ((no.total / maior) * 100).toFixed(1);
+  const dica = `${no.rotulo} — ${num(no.total)} atividade(s)`
+    + `\nClique para filtrar${temDentro ? `; a seta abre os ${DENTRO[nivel]} sem filtrar` : ''}`;
+
+  return `<li>
+    <div class="${classes}" tabindex="0" role="button" aria-pressed="${marcado}"
+      data-nivel="${nivel}" data-valor="${esc(no.valor)}" title="${esc(dica)}">
+      <span class="opcao-barra" style="width:${largura}%"></span>
+      <span class="opcao-marca" aria-hidden="true"></span>
+      <span class="opcao-rotulo">${esc(no.rotulo)}</span>
+      <span class="opcao-qtd">${num(no.total)}</span>
+      ${temDentro
+    ? `<span class="opcao-entrar" role="button" tabindex="-1"
+          data-entrar="${esc(no.valor)}" data-nivel="${nivel}"
+          title="Ver os ${DENTRO[nivel]} de ${esc(no.rotulo)} sem filtrar">›</span>`
+    : '<span class="opcao-entrar folha" aria-hidden="true"></span>'}
+    </div>
+  </li>`;
+}
+
+/** Uma coluna inteira: cabeçalho, busca e lista. */
+function coluna(nivel, nos) {
+  const termo = buscas[nivel];
+  const visiveis = termo ? nos.filter((n) => n.rotulo.toLowerCase().includes(termo)) : nos;
+  const maior = Math.max(1, ...visiveis.map((n) => n.total));
+
+  // o cabeçalho diz de quem a coluna está falando; clicar solta a abertura
+  const pai = nivel > 0 ? foco[nivel - 1] : null;
+  const escopo = pai
+    ? `<button class="coluna-escopo" data-limpar-foco="${nivel - 1}"
+        title="Voltar a mostrar todos os ${TITULOS[nivel].toLowerCase()}s">
+        <span class="coluna-escopo-nome">${esc(rotuloVisivel(nivel - 1, pai))}</span>✕</button>`
+    : `<span class="coluna-escopo vazio">${nos.length ? `${num(nos.length)} no total` : '—'}</span>`;
+
+  const lista = visiveis.length
+    ? visiveis.map((n) => opcao(n, nivel, maior)).join('')
+    : `<li class="coluna-vazia">${termo ? 'nada encontrado' : 'nada para escolher'}</li>`;
+
+  return `<div class="coluna tom-${nivel}">
+    <div class="coluna-topo">
+      <span class="coluna-titulo">${TITULOS[nivel]}</span>
+      ${escopo}
+    </div>
+    <input class="coluna-busca" type="search" autocomplete="off" data-busca="${nivel}"
+      value="${esc(termo)}" placeholder="filtrar ${TITULOS[nivel].toLowerCase()}…"
+      aria-label="Filtrar a coluna ${TITULOS[nivel]}">
+    <ul class="coluna-lista">${lista}</ul>
+  </div>`;
+}
+
+/** O rótulo legível de um valor — só o épico guarda chave em vez de nome. */
+const rotuloVisivel = (nivel, valor) =>
+  (NIVEIS[nivel] === 'epicos' ? rotulosEpico.get(valor) ?? valor : valor);
+
+/** Desenha as três colunas a partir do último payload carregado. */
+function montarFiltros() {
+  const el = $('#faixa-colunas');
+  const arvore = estado.dados?.arvore;
+  if (!arvore) {
+    el.innerHTML = '<p class="coluna-indisponivel">Indisponível — reinicie o servidor'
+      + ' para carregar esta métrica.</p>';
+    return;
+  }
+  el.innerHTML = colunasDe(arvore).map((nos, nivel) => coluna(nivel, nos)).join('');
+}
+
+/** As pílulas do cabeçalho: o que está marcado, e o ✕ que solta cada uma. */
+function montarChips() {
+  const chips = NIVEIS.flatMap((dim, nivel) => [...estado[dim]].map((valor) =>
+    `<button class="chip-filtro tom-${nivel}" data-solta="${esc(dim)}"
+      data-valor="${esc(valor)}" title="Tirar este filtro">
+      <span class="chip-nivel">${TITULOS[nivel]}</span>
+      <span class="chip-nome">${esc(rotuloVisivel(nivel, valor))}</span>
+      <span class="chip-x" aria-hidden="true">✕</span>
+    </button>`));
+
+  $('#chips-filtro').innerHTML = chips.join('');
+  $('#faixa-vazia').classList.toggle('oculto', chips.length > 0);
+  $('#btn-limpar-filtros-arvore').classList.toggle('oculto', !chips.length);
+
+  const recolhida = $('#faixa-filtros').classList.contains('recolhida');
+  $('#btn-recolher').title = `${recolhida ? 'Abrir' : 'Recolher'} a faixa de filtros`;
+}
+
+/** Redesenha a faixa inteira — chips e colunas contam a mesma coisa. */
+function redesenharFiltros() {
+  rotulosEpico = mapaDeEpicos(estado.dados?.arvore);
+  montarFiltros();
+  montarChips();
+}
+
+/** Épico → rótulo, varrendo a árvore uma vez. */
+function mapaDeEpicos(arvore) {
+  const mapa = new Map();
+  for (const pessoa of arvore ?? []) {
+    for (const espaco of pessoa.filhos ?? []) {
+      for (const epico of espaco.filhos ?? []) mapa.set(epico.valor, epico.rotulo);
+    }
+  }
+  return mapa;
+}
+
+/**
+ * O caminho até um valor: o que está aberto à esquerda dele, mais ele.
+ *
+ * Sem nada aberto à esquerda o caminho é só o próprio nó — e é o certo: clicar
+ * num espaço enquanto a coluna mostra os espaços de **todo mundo** não pode
+ * marcar responsável nenhum, porque não se passou por um.
+ */
+function caminhoAte(nivel, valor) {
+  const passos = [];
+  for (let i = 0; i < nivel; i++) {
+    if (foco[i]) passos.push([NIVEIS[i], foco[i]]);
+  }
+  passos.push([NIVEIS[nivel], valor]);
+  return passos;
+}
+
+/**
+ * Clique numa opção: **marcar leva o caminho inteiro**, desmarcar solta só ela.
+ *
+ * É o que as colunas prometem de olho: clicar em "CRM Loja" com "Franklyn"
+ * aberto à esquerda tem que mostrar o CRM Loja **do Franklyn**, e não o da
+ * equipe toda — senão a coluna da esquerda não quer dizer nada. Desmarcar é o
+ * contrário: solta só aquele nível, e o que está à esquerda continua valendo,
+ * que é como se sobe um degrau sem refazer a seleção.
+ *
+ * Os filtros seguem sendo conjuntos independentes por dimensão (ver `estado`),
+ * então marcar "CRM Loja" acende esse espaço para todo mundo que trabalha nele.
+ * É a verdade do recorte: o painel filtra por espaço, não por par
+ * pessoa-espaço.
+ *
+ * O clique também **abre** a opção, para a coluna seguinte já falar dela — quem
+ * quiser só olhar sem filtrar usa a seta "›" da direita.
+ */
+function alternarOpcao(nivel, valor) {
+  const dim = NIVEIS[nivel];
+  if (estado[dim].has(valor)) estado[dim].delete(valor);
+  else for (const [d, v] of caminhoAte(nivel, valor)) estado[d].add(v);
+
+  if (nivel < 2) abrir(nivel, valor, { redesenhar: false });
+  carregar();
+}
+
+/** Abre um nó na coluna: a seguinte passa a mostrar o que tem dentro dele. */
+function abrir(nivel, valor, { redesenhar = true } = {}) {
+  foco[nivel] = valor;
+  // trocar de responsável zera o espaço aberto: ele era de outra pessoa
+  if (nivel === 0) foco[1] = null;
+  // a coluna que mudou volta ao começo da busca, senão herdaria um filtro de
+  // texto que não tem mais a ver com o que está sendo mostrado
+  buscas[nivel + 1] = '';
+  if (redesenhar) redesenharFiltros();
+}
+
+/** Solta a abertura de uma coluna: a seguinte volta a mostrar o nível inteiro. */
+function soltarFoco(nivel) {
+  foco[nivel] = null;
+  if (nivel === 0) foco[1] = null;
+  buscas[nivel + 1] = '';
+  redesenharFiltros();
+}
+
+function ligarFiltros() {
+  const colunas = $('#faixa-colunas');
+
+  colunas.addEventListener('click', (ev) => {
+    const voltar = ev.target.closest('[data-limpar-foco]');
+    if (voltar) { soltarFoco(Number(voltar.dataset.limparFoco)); return; }
+
+    // a seta só navega; o resto da linha filtra
+    const seta = ev.target.closest('[data-entrar]');
+    if (seta) { abrir(Number(seta.dataset.nivel), seta.dataset.entrar); return; }
+
+    const alvo = ev.target.closest('.opcao');
+    if (alvo) alternarOpcao(Number(alvo.dataset.nivel), alvo.dataset.valor);
+  });
+
+  colunas.addEventListener('keydown', (ev) => {
+    const alvo = ev.target.closest?.('.opcao');
+    if (!alvo) return;
+    const nivel = Number(alvo.dataset.nivel);
+    if (ev.key === 'Enter' || ev.key === ' ') {
+      ev.preventDefault();
+      alternarOpcao(nivel, alvo.dataset.valor);
+    } else if (ev.key === 'ArrowRight' && nivel < 2) {
+      ev.preventDefault();
+      abrir(nivel, alvo.dataset.valor);
+    } else if (ev.key === 'ArrowLeft' && nivel > 0) {
+      ev.preventDefault();
+      soltarFoco(nivel - 1);
+    }
+  });
+
+  // a busca é por coluna: o redesenho não recarrega dado, só reescreve a lista
+  colunas.addEventListener('input', (ev) => {
+    const campo = ev.target.closest('[data-busca]');
+    if (!campo) return;
+    const nivel = Number(campo.dataset.busca);
+    buscas[nivel] = campo.value.trim().toLowerCase();
+    montarFiltros();
+    // o innerHTML foi refeito: devolve o cursor para o campo que estava sendo
+    // digitado, senão cada letra tiraria o foco
+    const novo = colunas.querySelector(`[data-busca="${nivel}"]`);
+    if (novo) { novo.focus(); novo.setSelectionRange(novo.value.length, novo.value.length); }
+  });
+
+  $('#chips-filtro').addEventListener('click', (ev) => {
+    const chip = ev.target.closest('[data-solta]');
+    if (!chip) return;
+    estado[chip.dataset.solta].delete(chip.dataset.valor);
+    carregar();
+  });
+}
+
+/**
+ * Recolhe ou abre a faixa. Os cartões abaixo mudam de altura, mas não de
+ * largura, e é a largura que entra no desenho dos gráficos (ver `larguraDo`) —
+ * então aqui não é preciso redesenhá-los.
+ */
+function alternarFaixa() {
+  const recolhida = $('#faixa-filtros').classList.toggle('recolhida');
+  $('#btn-recolher').setAttribute('aria-expanded', String(!recolhida));
+  try { localStorage.setItem('faixa-filtros-recolhida', recolhida ? '1' : ''); } catch { /* modo privado */ }
+  montarChips();
 }
 
 /** Clicar num mês recorta o período nele inteiro; clicar de novo, desfaz. */
@@ -946,17 +1248,6 @@ function ligarGraficos() {
     if (!alvo) return;
     ev.preventDefault();
     acionar(alvo);
-  });
-}
-
-function ligarSlicer(el, conjunto) {
-  el.addEventListener('click', (ev) => {
-    const li = ev.target.closest('li');
-    if (!li?.dataset.valor) return;
-    const valor = li.dataset.valor;
-    if (conjunto.has(valor)) conjunto.delete(valor);
-    else conjunto.add(valor);
-    carregar();
   });
 }
 
@@ -1088,12 +1379,7 @@ function renderizar(d, detalhe) {
 
   montarCapaRelatorio(d, detalhe);
 
-  const contEspaco = new Map(d.porEspaco.map((x) => [x.rotulo, x.total]));
-  const contEpico = new Map((d.porEpico ?? []).map((x) => [x.valor, x.total]));
-  const contResp = new Map(d.criadasPorResponsavel.map((x) => [x.rotulo, x.total]));
-  montarSlicer($('#slicer-espacos'), d.opcoes.espacos, estado.espacos, contEspaco);
-  montarSlicer($('#slicer-epicos'), d.opcoes.epicos ?? [], estado.epicos, contEpico);
-  montarSlicer($('#slicer-responsaveis'), d.opcoes.responsaveis, estado.responsaveis, contResp);
+  redesenharFiltros();
 
   renderizarProdutividade(d.produtividadeSemanal);
   renderizarBurndown(d.burndown);
@@ -1504,10 +1790,23 @@ async function iniciar() {
   $('#btn-excel').textContent = fonte.rotuloExportar;
   $('#btn-excel').title = fonte.dicaExportar;
 
-  ligarSlicer($('#slicer-espacos'), estado.espacos);
-  ligarSlicer($('#slicer-epicos'), estado.epicos);
-  ligarSlicer($('#slicer-responsaveis'), estado.responsaveis);
+  ligarFiltros();
   ligarGraficos();
+
+  // a faixa volta como o usuário a deixou — recolhê-la é uma escolha de espaço
+  // de tela, e reabrir a cada carga desfaria essa escolha toda vez
+  try {
+    if (localStorage.getItem('faixa-filtros-recolhida')) {
+      $('#faixa-filtros').classList.add('recolhida');
+      $('#btn-recolher').setAttribute('aria-expanded', 'false');
+    }
+  } catch { /* modo privado: fica aberta */ }
+
+  $('#btn-recolher').addEventListener('click', alternarFaixa);
+  $('#btn-limpar-filtros-arvore').addEventListener('click', () => {
+    for (const dim of NIVEIS) estado[dim].clear();
+    carregar();
+  });
 
   $('#cancelados').addEventListener('change', (e) => { estado.incluirCancelados = e.target.checked; carregar(); });
   $('#de').addEventListener('change', (e) => { estado.de = e.target.value; carregar(); });

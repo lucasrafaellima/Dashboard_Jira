@@ -193,7 +193,10 @@ sem precisar de uma sincronização completa.
 
 ## O que o dashboard mostra
 
-- **Segmentações** por Espaço e por Responsável (clique para filtrar, clique de novo para soltar), mais período por data de criação.
+- **Faixa de filtros** no alto do painel, com responsável, espaço e épico em três colunas
+  paralelas: abrir um responsável preenche a coluna de **espaços dele**, e abrir um espaço
+  preenche a de **épicos daquele espaço**. Detalhes [abaixo](#faixa-de-filtros). Mais período
+  por data, no cabeçalho.
 - **Status das Atividades** — barras verticais.
 - **Atividades concluídas por responsável** — pizza.
 - **Tickets criados por espaços** — barras horizontais.
@@ -205,12 +208,12 @@ sem precisar de uma sincronização completa.
 - Botão **PDF** usa a impressão do navegador, mas o que sai é um relatório, não uma foto da tela:
   - **A4 paisagem**, com capa (período coberto, filtros aplicados, data de geração e site do Jira
     de origem) e rodapé repetido em todas as páginas;
-  - a ordem muda para leitura: KPIs → status e panorama → espaços e responsáveis → evolução
-    mensal → produtividade semanal → demais gráficos → padronização de status;
-  - as listas de **Espaços** e **Responsável** saem inteiras, em duas colunas — na tela elas rolam,
-    no papel rolagem viraria corte;
-  - ficam de fora os controles, a tabela de atividades (essa vai no Excel) e as tabelas
-    operacionais de sincronização e importação.
+  - a ordem muda para leitura: KPIs → status e panorama → evolução mensal → produtividade
+    semanal → demais gráficos → padronização de status;
+  - ficam de fora os controles, a faixa de filtros, a tabela de atividades (essa vai no Excel)
+    e as tabelas operacionais de sincronização e importação. O que estava marcado na faixa
+    sai na **capa**, no bloco de filtros aplicados — é o que interessa no papel; as três
+    colunas inteiras ocupariam páginas.
   - Se os cartões azuis saírem sem cor, ligue **“Gráficos de plano de fundo”** nas opções de
     impressão do navegador — o CSS já pede `print-color-adjust: exact`, mas alguns navegadores
     respeitam apenas a caixa de seleção.
@@ -219,6 +222,49 @@ sem precisar de uma sincronização completa.
   cancelados): com filtro, só vem o que está filtrado. A tela mostra no máximo 500 linhas,
   mas a planilha leva **todas** as atividades do filtro. Datas saem como data de verdade
   (ordenável no Excel), com a primeira linha congelada e autofiltro ligado.
+
+### Faixa de filtros
+
+As três dimensões que antes eram listas soltas — espaços, épicos e responsável — viraram uma
+faixa só no alto do painel, com uma coluna por nível. A da esquerda estreita a do meio, e a do
+meio estreita a da direita:
+
+```
+FILTROS   [Responsável Franklyn ✕] [Espaço CRM Loja ✕]        limpar  ▾
+─────────────────────┬─────────────────────┬──────────────────────────
+RESPONSÁVEL   10     │ ESPAÇO   Franklyn ✕ │ ÉPICO    CRM Loja ✕
+[filtrar…]           │ [filtrar…]          │ [filtrar…]
+● Franklyn     2.815 │ ● CRM Loja    1.614 │ ○ CRM-171 · Agosto   605
+○ Suporte TI     643 │ ○ APP Recei.  1.102 │ ○ CRM-110 · Julho    472
+○ Francisco K.   329 │ ○ NWE            50 │ ○ CRM-653 · Dezembro 238
+```
+
+Cada coluna tem um tom próprio — a régua no topo, a barra de proporção atrás de cada linha e a
+pílula lá em cima usam a mesma cor, e é o que diz de que coluna veio cada filtro sem precisar de
+legenda. A barra atrás do nome é o peso daquela opção no nível: dá para ver quem carrega o
+volume sem comparar número por número.
+
+- **Sem nada aberto, cada coluna mostra o nível inteiro somado.** A faixa já serve como três
+  listas planas; a hierarquia é o que se ganha ao entrar numa opção.
+- **Clicar numa opção marca o caminho inteiro** e abre a coluna seguinte nela. Clicar em
+  `CRM Loja` com `Franklyn` aberto à esquerda marca responsável **e** espaço: o painel passa a
+  falar do CRM Loja *do Franklyn*. Se nada estiver aberto à esquerda, marca só o espaço — não se
+  passou por pessoa nenhuma, e inventar uma seria mentira.
+- **A seta `›` só navega**, sem filtrar: serve para olhar os espaços de alguém sem se
+  comprometer. **Desmarcar solta só aquele nível**, e o que está à esquerda continua valendo.
+- Os filtros continuam sendo **conjuntos por dimensão**, e não pares. Marcar `CRM Loja` acende
+  esse espaço para todo mundo que trabalha nele: o painel filtra por espaço, não por par
+  pessoa-espaço.
+- O número de cada opção é a contagem de atividades dela, e **o total de uma coluna é sempre o
+  mesmo das outras** quando nada está aberto — um item tem um responsável, um espaço e um épico,
+  e não entra em dois lugares.
+- **As colunas ignoram as próprias três seleções**, pelo mesmo motivo dos gráficos que filtram:
+  marcar `Franklyn` não pode apagar o resto das pessoas da coluna, senão não haveria mais como
+  trocar a seleção, só desfazê-la. Já **período, tipo, status e prioridade valem** — o número de
+  cada opção tem que bater com o que a tela mostra.
+- Cada coluna tem a **própria busca**; o **▾** recolhe a faixa, guardando a escolha no navegador,
+  e as pílulas do cabeçalho continuam à vista dizendo o que está marcado (o **✕** de cada uma
+  solta aquele filtro).
 
 ### Produtividade semanal por colaborador
 

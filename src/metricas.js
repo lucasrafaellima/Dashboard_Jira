@@ -630,6 +630,95 @@ function ordenarResponsaveis(lista) {
   });
 }
 
+// ------------------------------------------------------------ arvore de filtros
+
+/** Rotulo do espaco quando o item veio do Jira sem projeto — igual ao `contarPor`. */
+const SEM_ESPACO = '(vazio)';
+
+/**
+ * Ordena os nos de um nivel da arvore: o balde de "resto" ("(vazio)", "(sem
+ * épico)") vai sempre para o fim, e o resto desce por volume.
+ *
+ * O criterio e o mesmo de `ordenarResponsaveis` e `contarPorEpico`, so que
+ * generico — os tres niveis da arvore leem melhor com a mesma regra: quem tem
+ * mais trabalho aparece primeiro, e o que nao e uma categoria de verdade nao
+ * disputa o topo com quem e.
+ */
+function ordenarNos(nos, resto) {
+  return nos.sort((a, b) => {
+    if (a.valor === resto) return 1;
+    if (b.valor === resto) return -1;
+    return b.total - a.total || a.rotulo.localeCompare(b.rotulo, 'pt-BR');
+  });
+}
+
+/**
+ * Arvore da barra lateral: responsavel -> espaco -> epico, com a contagem de
+ * cada no.
+ *
+ * As tres dimensoes viviam em listas separadas, e as listas nao se falavam: os
+ * epicos de um espaco so apareciam depois de marcar o espaco, e nao havia como
+ * ver em que espacos uma pessoa trabalha sem filtrar por ela primeiro. A arvore
+ * responde as tres perguntas de uma vez, sem gastar um clique de filtro para
+ * cada uma.
+ *
+ * **A arvore ignora as proprias tres selecoes** — e o mesmo motivo de
+ * `porDimensao`: marcar "Maria" nao pode apagar o resto das pessoas da barra,
+ * senao nao haveria mais como trocar a selecao, so desfaze-la. Ja periodo,
+ * tipo, status e prioridade valem: sao recortes de fora da hierarquia, e o
+ * numero ao lado de cada no tem que bater com o que a tela mostra.
+ *
+ * Cada `total` conta itens do universo do periodo (criadas ou concluidas
+ * dentro dele, ver `separarPorPeriodo`), entao o total de um no e sempre a soma
+ * dos filhos — um item tem um responsavel, um espaco e um epico, e nao entra em
+ * dois ramos.
+ */
+function arvoreDeFiltros(todos, filtros, incluirCancelados) {
+  const base = aplicarRecortes(todos, {
+    ...filtros, espacos: [], epicos: [], responsaveis: [],
+  });
+  const { universo } = separarPorPeriodo(base, filtros, incluirCancelados);
+
+  const pessoas = new Map();
+  for (const it of universo) {
+    const quem = it.responsavel || SEM_RESPONSAVEL;
+    if (!pessoas.has(quem)) {
+      pessoas.set(quem, { valor: quem, rotulo: quem, total: 0, filhos: new Map() });
+    }
+    const pessoa = pessoas.get(quem);
+    pessoa.total++;
+
+    const onde = it.espaco || SEM_ESPACO;
+    if (!pessoa.filhos.has(onde)) {
+      pessoa.filhos.set(onde, { valor: onde, rotulo: onde, total: 0, filhos: new Map() });
+    }
+    const espaco = pessoa.filhos.get(onde);
+    espaco.total++;
+
+    const qual = epicoDe(it);
+    if (!espaco.filhos.has(qual)) {
+      espaco.filhos.set(qual, {
+        valor: qual,
+        rotulo: it.epico ? rotuloEpico(it.epico, it.epico_resumo) : SEM_EPICO,
+        total: 0,
+      });
+    }
+    espaco.filhos.get(qual).total++;
+  }
+
+  return ordenarNos([...pessoas.values()], SEM_RESPONSAVEL).map((pessoa) => ({
+    valor: pessoa.valor,
+    rotulo: pessoa.rotulo,
+    total: pessoa.total,
+    filhos: ordenarNos([...pessoa.filhos.values()], SEM_ESPACO).map((espaco) => ({
+      valor: espaco.valor,
+      rotulo: espaco.rotulo,
+      total: espaco.total,
+      filhos: ordenarNos([...espaco.filhos.values()], SEM_EPICO),
+    })),
+  }));
+}
+
 /**
  * Monta o payload completo do dashboard.
  * @param fonte  { itens, importacoes, sincronizacoes } — ver `metricas-banco.js`
@@ -693,6 +782,8 @@ export function montarDashboard(fonte, filtros = {}) {
       tipos: contarPor(todos, 'tipo_item').map((x) => x.rotulo),
       status: contarPor(todos, 'status').map((x) => x.rotulo),
     },
+    // as tres dimensoes da barra lateral, aninhadas (ver `arvoreDeFiltros`)
+    arvore: arvoreDeFiltros(todos, filtros, incluirCancelados),
     indicadores: {
       criadas: total,
       concluidas: concluidas.length,

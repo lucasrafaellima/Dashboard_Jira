@@ -63,6 +63,30 @@
   </div>
 </header>
 
+<!-- Faixa de filtros: responsável → espaço → épico, em três colunas paralelas.
+     Escolher na primeira coluna preenche a segunda, e assim por diante; sem
+     escolha nenhuma cada coluna mostra o nível inteiro somado. Fica fora do
+     <main> de propósito — o painel esmaece durante o carregamento
+     (.painel.carregando) e o comando do filtro não pode apagar junto com o que
+     ele filtra. Ver montarFiltros() em app.js. -->
+<div class="faixa-envolucro">
+<section id="faixa-filtros" class="faixa-filtros">
+  <header class="faixa-topo">
+    <h2>Filtros</h2>
+    <div id="chips-filtro" class="chips-filtro"></div>
+    <span id="faixa-vazia" class="faixa-vazia">nada marcado — o painel mostra a base inteira</span>
+    <button id="btn-limpar-filtros-arvore" class="btn-faixa oculto"
+      title="Desmarcar responsáveis, espaços e épicos">limpar</button>
+    <button id="btn-recolher" class="btn-faixa btn-recolher" aria-expanded="true"
+      aria-controls="faixa-colunas" title="Recolher a faixa de filtros">
+      <span aria-hidden="true">▾</span>
+    </button>
+  </header>
+
+  <div id="faixa-colunas" class="faixa-colunas"></div>
+</section>
+</div>
+
 <main id="painel" class="painel">
 
   <!-- capa do relatorio: so aparece na impressao/PDF -->
@@ -79,21 +103,6 @@
   </section>
 
   <section class="linha linha-1">
-    <div id="card-espacos-lista" class="cartao segmentacao">
-      <h2>Espaços</h2>
-      <ul id="slicer-espacos" class="slicer"></ul>
-    </div>
-
-    <div id="card-epicos-lista" class="cartao segmentacao">
-      <h2>Épicos <span class="sub">— pais dos tickets</span></h2>
-      <ul id="slicer-epicos" class="slicer"></ul>
-    </div>
-
-    <div id="card-responsaveis-lista" class="cartao segmentacao">
-      <h2>Responsável</h2>
-      <ul id="slicer-responsaveis" class="slicer"></ul>
-    </div>
-
     <div id="card-status" class="cartao grafico">
       <h2>Status das Atividades <span class="sub dica-clique">— clique para filtrar</span></h2>
       <div id="grafico-status" class="area-grafico"></div>
