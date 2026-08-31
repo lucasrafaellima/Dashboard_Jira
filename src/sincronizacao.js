@@ -7,12 +7,13 @@
 import { lerConfig } from './config.js';
 import {
   paginasDeIssues, escaparJql, listarProjetos, verificarConexao, exigirAutenticacao,
-  listarChaves,
+  listarChaves, CAMPOS_PADRAO, descobrirCampoSprint,
+  listarQuadros, listarSprintsDoQuadro, listarBacklogDoQuadro,
 } from './jira.js';
 import { normalizarLinha, espacoDoProjeto } from './normalizar.js';
 import {
   gravarItens, lerSincronizacao, listarSincronizacoes, contarItensDaOrigem,
-  registrarSincronizacao, removerAusentes, origemJira, resolverEpicos,
+  registrarSincronizacao, removerAusentes, origemJira, resolverEpicos, marcarQuadros,
 } from './banco.js';
 
 /** Folga aplicada a marca d'agua, para cobrir diferenca de fuso/relogio. */
@@ -104,8 +105,13 @@ const instante = (valor) => {
   return Number.isFinite(t) ? new Date(t).toISOString() : null;
 };
 
-/** Converte uma issue crua da API no registro gravado no banco (ou null). */
-export function registroDaIssue(issue) {
+/**
+ * Converte uma issue crua da API no registro gravado no banco (ou null).
+ * @param {object} issue issue como a API devolveu
+ * @param {string|null} [campoSprint] id do custom field da sprint neste site
+ *   (ver `descobrirCampoSprint`); sem ele o item chega sem sprint
+ */
+export function registroDaIssue(issue, campoSprint = null) {
   const f = issue?.fields ?? {};
   const projeto = f.project ?? {};
   const status = String(f.status?.name ?? '').trim() || 'Sem status';
@@ -142,6 +148,7 @@ export function registroDaIssue(issue) {
     atualizado: f.updated,
     concluido_em: concluidoEm,
     data_limite: f.duedate,
+    sprint: campoSprint ? f[campoSprint] : null,
     projeto: projeto.name,
     origem: projeto.key,
     pai: pai?.key,
@@ -234,15 +241,19 @@ async function sincronizarOrigem(cfg, alvo, ctx) {
   let marcaAgua = marcaAnterior;
   let truncado = false;
 
+  // a sprint e um custom field, entao precisa ser pedida por id (ver
+  // `descobrirCampoSprint`); sem ela no site, a consulta segue sem o campo
+  const campos = ctx.campoSprint ? [...CAMPOS_PADRAO, ctx.campoSprint] : CAMPOS_PADRAO;
+
   try {
-    for await (const pagina of paginasDeIssues(cfg, jql, { limite: cfg.maxIssues })) {
+    for await (const pagina of paginasDeIssues(cfg, jql, { limite: cfg.maxIssues, campos })) {
       conta.paginas++;
       conta.lidas += pagina.issues.length;
       if (pagina.truncado) truncado = true;
 
       const registros = [];
       for (const issue of pagina.issues) {
-        const r = registroDaIssue(issue);
+        const r = registroDaIssue(issue, ctx.campoSprint);
         if (r) registros.push(r);
         const u = instante(issue?.fields?.updated);
         if (u && (!marcaAgua || u > marcaAgua)) marcaAgua = u;
@@ -310,6 +321,52 @@ async function sincronizarOrigem(cfg, alvo, ctx) {
   return { origem, jql, completa: ctx.completa, ok: true, ...conta, removidos, truncado, avisos };
 }
 
+// ------------------------------------------------------------ quadros ageis
+
+/**
+ * Descobre os quadros ageis do site e carimba em cada item da base o quadro a
+ * que ele pertence, o tipo desse quadro e se ele esta no backlog dele.
+ *
+ * E o que da ao burndown como separar trabalho de sprint de fila de espera; a
+ * regra que le esses campos e `ehDeSprint()`, em normalizar.js.
+ *
+ * **Scrum ou Kanban** sai da lista de sprints do quadro, nao do campo `type`:
+ * em projeto gerenciado pela equipe todo quadro se declara `simple`, os dois
+ * tipos igualmente. Quadro que nunca teve sprint conta como Kanban — e o que
+ * ele e na pratica para quem olha o grafico.
+ *
+ * Roda uma vez ao fim da sincronizacao, sobre a base inteira, pelo mesmo motivo
+ * de `resolverEpicos()`: o carimbo vale por projeto, nao por pagina lida.
+ */
+export async function resolverQuadros(cfg) {
+  const avisos = [];
+  const quadros = await listarQuadros(cfg);
+  const resolvidos = [];
+
+  for (const q of quadros) {
+    if (!q.projeto) {
+      // quadro sobre filtro solto: pode juntar varios projetos, e a associacao
+      // projeto -> quadro que o carimbo usa nao vale mais
+      avisos.push(`o quadro "${q.nome}" não está preso a um projeto e foi ignorado`);
+      continue;
+    }
+    const sprints = await listarSprintsDoQuadro(cfg, q.id);
+    const { chaves, erro } = await listarBacklogDoQuadro(cfg, q.id);
+    if (erro) {
+      avisos.push(`não consegui ler o backlog do quadro "${q.nome}" (${erro}); `
+        + 'nenhum item dele foi marcado como backlog');
+    }
+    resolvidos.push({
+      projeto: q.projeto,
+      quadro: q.nome,
+      tipo: sprints.length ? 'scrum' : 'kanban',
+      backlog: chaves,
+    });
+  }
+
+  return { quadros: resolvidos.length, marcados: marcarQuadros(resolvidos), avisos };
+}
+
 /**
  * Sincroniza todas as origens configuradas, **uma de cada vez**.
  *
@@ -338,6 +395,15 @@ export async function sincronizar(opcoes = {}) {
   const total = origens.length;
   const pausa = opcoes.pausaMs ?? cfg.pausaMs ?? PAUSA_ORIGENS_MS;
 
+  // uma consulta so para o site inteiro: o id do campo Sprint muda de site para
+  // site, e sem ele a issue chega sem saber a que sprint pertence
+  let campoSprint = null;
+  try {
+    campoSprint = await descobrirCampoSprint(cfg);
+  } catch (e) {
+    opcoes.aoProgredir?.({ fase: 'aviso', erro: `não consegui descobrir o campo Sprint: ${e.message}` });
+  }
+
   opcoes.aoProgredir?.({
     fase: 'inicio',
     total,
@@ -354,6 +420,7 @@ export async function sincronizar(opcoes = {}) {
       indice: i + 1,
       total,
       pausaPaginaMs: opcoes.pausaPaginaMs ?? 0,
+      campoSprint,
     };
 
     try {
@@ -385,12 +452,27 @@ export async function sincronizar(opcoes = {}) {
     opcoes.aoProgredir?.({ fase: 'aviso', erro: `não consegui resolver os épicos: ${e.message}` });
   }
 
+  // e, pelo mesmo motivo, o quadro agil de cada item: o carimbo vale por
+  // projeto inteiro, entao so faz sentido depois que tudo entrou na base
+  let quadros = { quadros: 0, marcados: 0, avisos: [] };
+  try {
+    quadros = await resolverQuadros(cfg);
+    for (const aviso of quadros.avisos) opcoes.aoProgredir?.({ fase: 'aviso', erro: aviso });
+  } catch (e) {
+    quadros.avisos = [e.message];
+    opcoes.aoProgredir?.({
+      fase: 'aviso',
+      erro: `não consegui ler os quadros ágeis (${e.message}); o burndown fica sem dado de sprint`,
+    });
+  }
+
   const somar = (campo) => resultados.reduce((s, r) => s + (r[campo] ?? 0), 0);
   return {
     completa: !!opcoes.completa,
     duracaoMs: Date.now() - inicio,
     origens: resultados,
     epicosResolvidos,
+    quadros,
     novos: somar('novos'),
     atualizados: somar('atualizados'),
     removidos: somar('removidos'),

@@ -518,7 +518,13 @@ const diaPorExtenso = (iso, i) => `${DIAS_UTEIS_LONGOS[i] ?? ''}, ${iso.slice(8)
  */
 function linhaBurndown(b, { largura } = {}) {
   if (!b?.dias?.length) return vazio('Indisponível — reinicie o servidor para carregar esta métrica.');
-  if (!b.escopo) return vazio('Nenhuma atividade aberta nesta semana para os filtros selecionados.');
+  if (b.semDadoDeSprint) {
+    return vazio('A base ainda não tem informação de sprint. Sincronize com o Jira para o'
+      + ' burndown separar o trabalho de sprint do backlog.');
+  }
+  if (!b.escopo) {
+    return vazio('Nenhuma atividade de sprint aberta nesta semana para os filtros selecionados.');
+  }
 
   const L = largura ?? 620;
   // o topo abre espaço para a legenda; embaixo cabe o rótulo do dia numa linha
@@ -637,6 +643,11 @@ function renderizarBurndown(b) {
     'A linha cheia é o que ainda estava em aberto no fim de cada dia; a pontilhada é a reta que'
       + ' zeraria na sexta a fila do fim da segunda. As duas partem do mesmo ponto: o que entra'
       + ' depois empurra a linha cheia para cima da reta.',
+    b.semDadoDeSprint
+      ? 'A base ainda não tem informação de sprint: sincronize com o Jira para o gráfico voltar.'
+      : 'Só entra trabalho de sprint: em projeto com sprint, quem está numa delas; em projeto'
+        + ' Kanban, quem está no quadro. Backlog e projeto sem quadro ágil ficam de fora'
+        + (b.foraDeSprint ? ` (${num(b.foraDeSprint)} atividade(s) deste recorte).` : '.'),
     b.emCurso
       ? 'A semana ainda corre: a linha para no último dia fechado e os dias à frente ficam sem ponto.'
       : null,

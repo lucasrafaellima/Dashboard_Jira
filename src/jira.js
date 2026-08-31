@@ -10,7 +10,7 @@
 
 // `parent` traz a issue pai ja resumida (chave, tipo e titulo) — e o que liga
 // cada ticket ao epico do espaco a que ele pertence.
-const CAMPOS_PADRAO = [
+export const CAMPOS_PADRAO = [
   'summary', 'issuetype', 'assignee', 'reporter', 'priority',
   'status', 'resolution', 'resolutiondate', 'created', 'updated', 'duedate',
   'project', 'parent',
@@ -312,4 +312,121 @@ export async function listarChaves(cfg, jql, opcoes = {}) {
 /** Escapa um literal para uso dentro de aspas em JQL. */
 export function escaparJql(valor) {
   return String(valor ?? '').replace(/["\\]/g, '\\$&');
+}
+
+// ------------------------------------------------------------ sprint
+
+// O Sprint nao e um campo fixo da API: e um custom field do plugin agil, e o
+// numero dele muda de site para site. O tipo (`schema.custom`) e o mesmo em
+// todo lugar, entao a busca e por ele; o id abaixo e so o palpite do Cloud
+// novo, usado quando a listagem de campos nao pode ser lida.
+const TIPO_CAMPO_SPRINT = 'com.atlassian.greenhopper.jira.plugin.system.customfieldtypes:gh-sprint';
+const CAMPO_SPRINT_PADRAO = 'customfield_10020';
+
+// por site: o id ja descoberto, para nao repetir a listagem de campos
+const campoSprintPorSite = new Map();
+
+/**
+ * Id do custom field "Sprint" neste site do Jira.
+ *
+ * Devolve `null` quando o site nao tem o campo — instalacao sem o modulo agil.
+ * Nesse caso ninguem tem sprint, e a sincronizacao simplesmente nao pede o
+ * campo em vez de estourar a consulta inteira com "campo desconhecido".
+ */
+export async function descobrirCampoSprint(cfg) {
+  if (campoSprintPorSite.has(cfg.url)) return campoSprintPorSite.get(cfg.url);
+
+  let achado = null;
+  try {
+    const campos = await requisitar(cfg, '/rest/api/3/field');
+    const lista = Array.isArray(campos) ? campos : [];
+    achado = lista.find((c) => c?.schema?.custom === TIPO_CAMPO_SPRINT)
+      ?? lista.find((c) => c?.custom && String(c?.name ?? '').toLowerCase() === 'sprint')
+      ?? null;
+    achado = achado?.id ?? null;
+  } catch {
+    // sem permissao para listar campos: o palpite ainda costuma acertar, e um
+    // campo inexistente so faz a issue chegar sem sprint
+    achado = CAMPO_SPRINT_PADRAO;
+  }
+  campoSprintPorSite.set(cfg.url, achado);
+  return achado;
+}
+
+// ------------------------------------------------------------ quadros ageis
+
+/**
+ * Quadros ageis visiveis, cada um com o projeto a que pertence.
+ *
+ * `projeto` vem `null` em quadro montado sobre um filtro solto (que pode juntar
+ * varios projetos); quem chama trata esse caso, porque a associacao
+ * projeto -> quadro deixa de valer ali.
+ */
+export async function listarQuadros(cfg) {
+  const quadros = [];
+  let inicio = 0;
+  for (;;) {
+    const p = await requisitar(cfg, `/rest/agile/1.0/board?startAt=${inicio}&maxResults=50`);
+    const lote = p?.values ?? [];
+    for (const v of lote) {
+      quadros.push({ id: v.id, nome: v.name ?? `quadro ${v.id}`, projeto: v.location?.projectKey ?? null });
+    }
+    if (!lote.length || p?.isLast !== false || quadros.length >= 500) break;
+    inicio += lote.length;
+  }
+  return quadros;
+}
+
+/**
+ * Sprints de um quadro, da mais antiga para a mais nova.
+ *
+ * Lista vazia quer dizer "este quadro nao trabalha com sprint": um quadro
+ * Kanban responde **400** a esta rota, e e exatamente por ai que os dois tipos
+ * de quadro se separam sem depender do campo `type` — em projetos gerenciados
+ * pela equipe todos se declaram `simple`, Scrum e Kanban igualmente.
+ */
+export async function listarSprintsDoQuadro(cfg, id) {
+  const sprints = [];
+  let inicio = 0;
+  for (;;) {
+    let p;
+    try {
+      p = await requisitar(cfg, `/rest/agile/1.0/board/${id}/sprint?startAt=${inicio}&maxResults=50`);
+    } catch (e) {
+      // 400 = quadro sem sprint (Kanban); 404 = quadro sumiu no meio da passada
+      if (e.status === 400 || e.status === 404) return [];
+      throw e;
+    }
+    const lote = p?.values ?? [];
+    for (const s of lote) sprints.push({ id: s.id, nome: s.name ?? '', estado: s.state ?? '' });
+    if (!lote.length || p?.isLast !== false || sprints.length >= 500) break;
+    inicio += lote.length;
+  }
+  return sprints;
+}
+
+/**
+ * Chaves das issues no backlog de um quadro.
+ *
+ * `chaves: null` significa **nao sei**, nao "backlog vazio": alguns quadros
+ * respondem erro nesta rota (um quadro gerenciado pela equipe sem backlog
+ * habilitado devolve 500). Quem chama nao pode confundir os dois — marcar tudo
+ * como fora do backlog e o certo ali, mas o motivo tem de aparecer no aviso.
+ */
+export async function listarBacklogDoQuadro(cfg, id) {
+  const chaves = [];
+  let inicio = 0;
+  for (;;) {
+    let p;
+    try {
+      p = await requisitar(cfg, `/rest/agile/1.0/board/${id}/backlog?startAt=${inicio}&maxResults=100&fields=key`);
+    } catch (e) {
+      return { chaves: null, erro: e.message };
+    }
+    const lote = p?.issues ?? [];
+    for (const i of lote) if (i?.key) chaves.push(String(i.key).toUpperCase());
+    inicio += lote.length;
+    if (!lote.length || inicio >= (Number(p?.total) || 0) || chaves.length >= 50000) break;
+  }
+  return { chaves, erro: null };
 }

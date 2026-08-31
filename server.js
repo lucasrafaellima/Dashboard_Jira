@@ -402,6 +402,28 @@ const servidor = createServer(async (req, res) => {
   }
 });
 
+// Porta ocupada nao e defeito do programa, e nao merece stack trace: quem sobe
+// o dashboard precisa saber qual porta trocar, nao em que linha do `net` o Node
+// desistiu. No Windows os dois erros abaixo querem dizer a mesma coisa na
+// pratica — um servico que escuta em "::" (Grafana, IIS, Docker) ocupa o IPv4
+// junto e o Node recusa com EACCES em vez de EADDRINUSE.
+servidor.on('error', (e) => {
+  if (e.code !== 'EADDRINUSE' && e.code !== 'EACCES') throw e;
+  console.error(
+    `\nNão consegui subir na porta ${PORTA}: ${
+      e.code === 'EACCES'
+        ? 'o Windows negou o acesso a ela (outro serviço a ocupa, ou ela está numa faixa reservada)'
+        : 'já há outro processo escutando nela'
+    }.\n`
+    + `\nEscolha outra porta de uma destas formas:\n`
+    + `  PORT=3200 npm start          (só desta vez)\n`
+    + `  PORT=3200 no arquivo .env    (fica valendo)\n`
+    + `\nPara descobrir quem está com a porta ${PORTA}, no PowerShell:\n`
+    + `  Get-Process -Id (Get-NetTCPConnection -LocalPort ${PORTA}).OwningProcess\n`,
+  );
+  process.exitCode = 1;
+});
+
 conectar();
 servidor.listen(PORTA, HOST, () => {
   const cfg = configPublica();

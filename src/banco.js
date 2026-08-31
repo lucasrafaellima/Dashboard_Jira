@@ -39,6 +39,14 @@ function migrar(d) {
   // atividade foi concluida, nao a data do ultimo toque no item
   if (!colunas.has('concluido_em')) d.exec('ALTER TABLE itens ADD COLUMN concluido_em TEXT;');
   d.exec('CREATE INDEX IF NOT EXISTS idx_itens_concluido ON itens(concluido_em);');
+
+  // sprint/quadro: separam trabalho aceito de backlog, e e disso que o burndown
+  // e feito. Base migrada chega com tudo vazio e so se preenche na proxima
+  // sincronizacao — ate la `ehDeSprint()` responde "nao" para todo mundo.
+  for (const c of ['sprint', 'sprint_estado', 'quadro', 'quadro_tipo']) {
+    if (!colunas.has(c)) d.exec(`ALTER TABLE itens ADD COLUMN ${c} TEXT;`);
+  }
+  if (!colunas.has('no_backlog')) d.exec('ALTER TABLE itens ADD COLUMN no_backlog INTEGER DEFAULT 0;');
 }
 
 function criarEsquema(d) {
@@ -72,6 +80,13 @@ function criarEsquema(d) {
       pai_resumo       TEXT,
       epico            TEXT,
       epico_resumo     TEXT,
+      -- sprint da propria issue; "quadro"/"no_backlog" dependem de consultar o
+      -- quadro agil do projeto e sao carimbados por resolverQuadros()
+      sprint           TEXT,
+      sprint_estado    TEXT,
+      quadro           TEXT,
+      quadro_tipo      TEXT,
+      no_backlog       INTEGER DEFAULT 0,
       arquivo_origem   TEXT,
       importado_em     TEXT
     );
@@ -117,6 +132,10 @@ const CAMPOS = [
   'relator', 'id_relator', 'prioridade', 'status', 'status_origem', 'status_categoria',
   'resolucao', 'criado', 'atualizado', 'concluido_em', 'data_limite', 'projeto', 'origem', 'espaco',
   'pai', 'pai_tipo', 'pai_resumo', 'epico', 'epico_resumo',
+  // `quadro`, `quadro_tipo` e `no_backlog` ficam de fora de proposito: eles nao
+  // vem na issue, e escrever aqui apagaria o carimbo de resolverQuadros() a
+  // cada passada para reconstruir tudo em seguida
+  'sprint', 'sprint_estado',
   'arquivo_origem', 'importado_em',
 ];
 
@@ -240,6 +259,63 @@ export function resolverEpicos() {
     throw e;
   }
   return corrigidos;
+}
+
+/**
+ * Regrava, de uma vez, a que quadro agil cada item pertence e se ele esta no
+ * backlog desse quadro. E o que permite ao burndown separar trabalho aceito de
+ * fila de espera (ver `ehDeSprint`).
+ *
+ * O casamento item -> quadro e pelo **prefixo da chave** ("WIK-358" -> WIK), e
+ * nao pela coluna `origem`: linha vinda de planilha guarda ali o nome do
+ * arquivo, e so a chave existe nos dois caminhos de entrada.
+ *
+ * Item de projeto que **nao** esta na lista fica sem quadro. E o mesmo caminho
+ * de duas situacoes diferentes, as duas corretas: o projeto nunca teve quadro
+ * agil, ou tinha e perdeu — nos dois casos ele para de contar como sprint.
+ *
+ * @param {Array<{projeto:string, quadro:string, tipo:'scrum'|'kanban',
+ *                backlog:string[]|null}>} quadros um por quadro do site;
+ *   `backlog: null` = o Jira nao soube responder, e ninguem daquele quadro e
+ *   marcado como backlog
+ * @returns {number} quantos itens mudaram de carimbo
+ */
+export function marcarQuadros(quadros) {
+  const d = conectar();
+
+  const porProjeto = new Map();
+  for (const q of quadros ?? []) {
+    const chave = String(q?.projeto ?? '').trim().toUpperCase();
+    if (!chave) continue;
+    porProjeto.set(chave, {
+      quadro: q.quadro || null,
+      tipo: q.tipo || null,
+      backlog: q.backlog ? new Set(q.backlog) : null,
+    });
+  }
+
+  const linhas = d.prepare('SELECT chave, quadro, quadro_tipo, no_backlog FROM itens').all();
+  const atualizar = d.prepare('UPDATE itens SET quadro = ?, quadro_tipo = ?, no_backlog = ? WHERE chave = ?');
+  let mudados = 0;
+
+  d.exec('BEGIN');
+  try {
+    for (const l of linhas) {
+      const info = porProjeto.get(String(l.chave).split('-')[0]) ?? null;
+      const quadro = info?.quadro ?? null;
+      const tipo = info?.tipo ?? null;
+      const noBacklog = info?.backlog?.has(l.chave) ? 1 : 0;
+      if (quadro === (l.quadro || null) && tipo === (l.quadro_tipo || null)
+        && noBacklog === (l.no_backlog ? 1 : 0)) continue;
+      atualizar.run(quadro, tipo, noBacklog, l.chave);
+      mudados++;
+    }
+    d.exec('COMMIT');
+  } catch (e) {
+    d.exec('ROLLBACK');
+    throw e;
+  }
+  return mudados;
 }
 
 export function registrarImportacao({ arquivo, aba, hash, linhas, novos, atualizados, ignorados }) {

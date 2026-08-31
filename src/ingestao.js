@@ -51,6 +51,12 @@ function lerCsv(texto) {
 
 // ------------------------------------------------------------ escolha da aba
 
+// Campos que a exportacao do Jira espalha por varias colunas de mesmo nome:
+// uma issue que passou por tres sprints sai com tres colunas "Sprint", so a
+// primeira preenchida nas issues que estiveram em uma so. Ler apenas a primeira
+// coluna perderia a sprint atual de quem foi arrastado adiante.
+const CAMPOS_REPETIDOS = new Set(['sprint']);
+
 /** Acha a linha de cabecalho (entre as 10 primeiras) e o mapa coluna->campo. */
 function analisarCabecalho(linhas) {
   const limite = Math.min(10, linhas.length);
@@ -59,12 +65,18 @@ function analisarCabecalho(linhas) {
   for (let i = 0; i < limite; i++) {
     const linha = linhas[i] || [];
     const mapa = new Map();
+    const repetidas = new Map();
     for (let c = 0; c < linha.length; c++) {
       const campo = campoDoCabecalho(linha[c]);
-      if (campo && !mapa.has(campo)) mapa.set(campo, c);
+      if (!campo) continue;
+      if (CAMPOS_REPETIDOS.has(campo)) {
+        if (!repetidas.has(campo)) repetidas.set(campo, []);
+        repetidas.get(campo).push(c);
+      }
+      if (!mapa.has(campo)) mapa.set(campo, c);
     }
     if (!CAMPOS_OBRIGATORIOS.every((f) => mapa.has(f))) continue;
-    if (!melhor || mapa.size > melhor.mapa.size) melhor = { linhaCabecalho: i, mapa };
+    if (!melhor || mapa.size > melhor.mapa.size) melhor = { linhaCabecalho: i, mapa, repetidas };
   }
   return melhor;
 }
@@ -130,6 +142,13 @@ export function importarArquivo(conteudo, nomeArquivo, opcoes = {}) {
     if (!linha || !linha.length) continue;
     const bruto = {};
     for (const [campo, col] of aba.mapa) bruto[campo] = linha[col] ?? '';
+    // coluna repetida: vale o ultimo valor preenchido — a sprint mais recente
+    for (const [campo, cols] of aba.repetidas ?? []) {
+      for (const col of cols) {
+        const v = String(linha[col] ?? '').trim();
+        if (v) bruto[campo] = v;
+      }
+    }
     const registro = normalizarLinha(bruto);
     if (registro) registros.push(registro);
     else if (linha.some((v) => String(v ?? '').trim())) descartados++;

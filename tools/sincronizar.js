@@ -83,6 +83,13 @@ async function principal() {
     + `${r.falhas ? `, ${r.falhas} origem(ns) com erro` : ''}.`,
   );
   if (r.epicosResolvidos) console.log(`Hierarquia: ${r.epicosResolvidos} itens tiveram o épico atualizado.`);
+  if (r.quadros?.quadros) {
+    console.log(
+      `Quadros ágeis: ${r.quadros.quadros} quadro(s) lido(s), `
+      + `${r.quadros.marcados} itens recarimbados (sprint/backlog do burndown).`,
+    );
+  }
+  for (const aviso of r.quadros?.avisos ?? []) console.log(`    aviso: ${aviso}`);
   console.log(`Base agora com ${contarItens()} itens.`);
   if (r.falhas) process.exitCode = 1;
 }

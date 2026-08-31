@@ -14,7 +14,12 @@ cd "Desktop/projetos coagro/Dashboard_Jira"
 npm start
 ```
 
-Abre em <http://localhost:3000> (mude com `PORT=3210 npm start`).
+Abre em <http://localhost:3000> (mude com `PORT=3210 npm start`, ou com `PORT=` no `.env`
+para ficar valendo).
+
+Se subir com **`EACCES`** ou **`EADDRINUSE`**, a porta é de outro serviço — o servidor diz
+qual trocar e como descobrir quem a ocupa. No Windows, um serviço que escuta em `::`
+(Grafana, IIS, Docker) toma o IPv4 junto e o erro vem como `EACCES`, não como "porta em uso".
 
 ## Conectar no Jira
 
@@ -324,6 +329,23 @@ cartão também avisa quando isso acontece.
 Quanto trabalho ainda estava **em aberto no fim de cada dia**, de segunda a sexta, contra a
 reta que zeraria a fila na sexta-feira.
 
+- **Só entra trabalho de sprint; backlog fica de fora.** O que está parado no backlog não foi
+  prometido para semana nenhuma, e contá-lo inflaria a linha real com uma fila que ninguém se
+  comprometeu a queimar. Como metade dos projetos daqui não usa sprint, o critério muda com o
+  quadro ágil de cada projeto:
+
+  | Projeto | Critério | Fica de fora |
+  |---|---|---|
+  | Com quadro **Scrum** (CRM, GCW, HC, ES) | estar numa sprint | quem não tem sprint — por definição, backlog |
+  | Com quadro **Kanban** (WIK, AR) | estar no quadro | quem está no backlog do quadro |
+  | **Sem quadro ágil** (SUP, ADN, HUB, MPDD, NWE) | — | tudo: não há sprint nem backlog para consultar |
+
+  Scrum ou Kanban sai de o quadro **ter ou não sprints**, não do campo `type` da API: em
+  projeto gerenciado pela equipe todo quadro se declara `simple`, os dois tipos igualmente.
+  Quadro Kanban sem backlog habilitado (é o caso do WIK) não deixa ninguém de fora — lá todo
+  item do quadro já é trabalho aceito. A nota do cartão diz quantas atividades do recorte
+  atual ficaram de fora.
+
 - **A reta parte da fila do fim da segunda** e desce até zero na sexta. As duas linhas nascem
   no mesmo ponto, e daí em diante a distância entre elas é a leitura inteira do cartão.
   Partir do escopo cheio da semana (com o que entrou depois já embutido) foi testado e mente:
@@ -345,6 +367,10 @@ reta que zeraria a fila na sexta-feira.
   atividades abertas antes do recorte; o status, porque o gráfico é feito de aberto contra
   concluído e recortar por status responderia sozinho a pergunta. Espaço, épico, responsável,
   tipo e prioridade valem normalmente.
+- **Precisa de sincronização com a API.** Sprint e backlog vêm do Jira (campo `Sprint` e a
+  API ágil dos quadros), e são gravados na base a cada passada da sincronização. Base
+  importada só de planilha, ou sincronizada antes desta versão, aparece com o aviso *“a base
+  ainda não tem informação de sprint”* até a próxima sincronização.
 
 ### O que conta como concluída
 

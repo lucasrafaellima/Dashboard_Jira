@@ -5,7 +5,7 @@
 // e o snapshot baixado do Firestore. Assim o mesmo motor roda nos dois lados.
 import {
   ehConcluida, SEM_RESPONSAVEL, ORDEM_PRIORIDADE, CATEGORIAS, SEM_EPICO, rotuloEpico,
-  dataDeConclusao,
+  dataDeConclusao, ehDeSprint,
 } from './normalizar.js';
 
 /** Chave usada nos filtros de epico: a chave da issue, ou "(sem épico)". */
@@ -429,6 +429,10 @@ function produtividadeSemanal(concluidas, concluidasDoFiltro = concluidas, opcoe
  *   - **o escopo e o trabalho tocado na semana**: o que estava aberto na segunda
  *     mais o que nasceu ate sexta. Item que ja tinha fechado antes da segunda
  *     fica de fora, e item que so nasce depois da sexta tambem.
+ *   - **so entra trabalho de sprint** (ver `ehDeSprint`): o que esta parado no
+ *     backlog nao foi prometido para semana nenhuma, e contar isso aqui inflaria
+ *     a linha real com uma fila que ninguem se comprometeu a queimar. Em projeto
+ *     Kanban o criterio vira "esta no quadro"; projeto sem quadro agil nao entra.
  *   - **a semana e a mesma do cartao de produtividade** (ver `janelaDeSemanas`):
  *     sem filtro de datas, a semana corrente; com filtro, a ultima do intervalo.
  *
@@ -440,9 +444,15 @@ function burndownSemanal(base, { inicio, incluirCancelados }) {
   const dias = Array.from({ length: DIAS_UTEIS }, (_, i) => somarDias(inicio, i));
   const sexta = dias[DIAS_UTEIS - 1];
 
+  // Base sem carimbo de quadro nenhum e base que ainda nao foi sincronizada
+  // depois desses campos existirem. Sem isso o cartao ficaria vazio dizendo
+  // "nenhuma atividade nesta semana", que e a explicacao errada.
+  const semDadoDeSprint = base.length > 0 && !base.some((it) => it.quadro_tipo);
+  const naSprint = semDadoDeSprint ? [] : base.filter(ehDeSprint);
+
   // cada item vira so o par de datas que o burndown usa
   const escopo = [];
-  for (const it of base) {
+  for (const it of naSprint) {
     const nasceu = it.criado ? soDia(it.criado) : null;
     if (!nasceu || nasceu > sexta) continue;
     const fim = ehConcluida(it.status, incluirCancelados) ? dataDeConclusao(it) : null;
@@ -481,6 +491,10 @@ function burndownSemanal(base, { inicio, incluirCancelados }) {
     inicio,
     fim: sexta,
     escopo: escopo.length,
+    // quanto do recorte ficou de fora por nao ser trabalho de sprint, e se a
+    // base sequer tem o dado — a nota do cartao explica os dois casos
+    foraDeSprint: base.length - naSprint.length,
+    semDadoDeSprint,
     // o que ja vinha aberto de antes e o que nasceu dentro da semana
     herdado,
     novas: escopo.length - herdado,
@@ -822,12 +836,15 @@ export function montarDashboard(fonte, filtros = {}) {
     ),
     serieMensal: serieMensal(semData.criadas, semData.concluidas),
     produtividadeSemanal: semanal,
-    // Mesma semana do cartao de produtividade — a ultima da janela. Duas
-    // diferencas na populacao, e as duas de proposito:
+    // Mesma semana do cartao de produtividade — a ultima da janela. Tres
+    // diferencas na populacao, e as tres de proposito:
     //   - o **periodo** nao vale: um item aberto em julho e ainda pendente pesa
     //     no burndown de agosto, e a data de criacao dele esta fora do recorte;
     //   - o filtro de **status** nao vale: o grafico e feito de aberto contra
-    //     concluido, e recortar por status responderia sozinho a pergunta.
+    //     concluido, e recortar por status responderia sozinho a pergunta;
+    //   - o **backlog fica de fora**, dentro de burndownSemanal (ver
+    //     `ehDeSprint`): so entra o que esta numa sprint, ou no quadro nos
+    //     projetos Kanban.
     // Espaco, epico, responsavel, tipo e prioridade continuam valendo.
     burndown: burndownSemanal(
       aplicarRecortes(todos, { ...filtros, status: [] }),

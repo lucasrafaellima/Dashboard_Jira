@@ -64,6 +64,8 @@ for (const [alias, campo] of [
   ['nome do epic', 'epico_resumo'],
   ['rotulo epic', 'epico_resumo'],
   ['epic name', 'epico_resumo'],
+  // sprint: a exportacao repete a coluna uma vez por sprint da issue
+  ['sprint', 'sprint'],
 ]) POR_TITULO.set(chaveComparacao(alias), campo);
 
 /** Mapeia um cabecalho da planilha para o campo interno (ou null). */
@@ -222,6 +224,77 @@ export function dataDeConclusao(item) {
 export function ehConcluida(status, incluirCancelados = false) {
   const c = categoriaStatus(status);
   return c === 'Concluído' || (incluirCancelados && c === 'Cancelado');
+}
+
+// ------------------------------------------------------------ sprint / quadro
+
+// Jira Server manda a sprint como um blob de texto em vez de objeto:
+// "com.atlassian...Sprint@1a2b[id=5,rapidViewId=3,state=ACTIVE,name=Semana 4,...]".
+// Só o nome e o estado interessam aqui.
+const RE_SPRINT_BLOB = /\[.*\bname=([^,\]]*)/;
+const RE_SPRINT_ESTADO = /\bstate=([^,\]]*)/;
+
+function umaSprint(valor) {
+  if (!valor) return { sprint: '', sprint_estado: '' };
+  if (typeof valor === 'object') {
+    return {
+      sprint: String(valor.name ?? '').trim(),
+      sprint_estado: String(valor.state ?? '').trim().toLowerCase(),
+    };
+  }
+  const s = String(valor).trim();
+  if (!s) return { sprint: '', sprint_estado: '' };
+  const nome = RE_SPRINT_BLOB.exec(s);
+  if (!nome) return { sprint: s, sprint_estado: '' };
+  return {
+    sprint: nome[1].trim(),
+    sprint_estado: (RE_SPRINT_ESTADO.exec(s)?.[1] ?? '').trim().toLowerCase(),
+  };
+}
+
+/**
+ * Nome e estado da sprint de um item.
+ *
+ * A API devolve uma **lista**: uma issue arrastada de uma sprint para a
+ * seguinte guarda todas por onde passou. Vale a ultima, que e a sprint em que
+ * ela esta agora. Da planilha vem so o texto de uma coluna.
+ */
+export function normalizarSprint(valor) {
+  if (Array.isArray(valor)) {
+    for (let i = valor.length - 1; i >= 0; i--) {
+      const s = umaSprint(valor[i]);
+      if (s.sprint) return s;
+    }
+    return { sprint: '', sprint_estado: '' };
+  }
+  return umaSprint(valor);
+}
+
+/**
+ * O item conta como "trabalho de sprint" — o que o burndown mede.
+ *
+ * A resposta depende do tipo do quadro do projeto, porque metade dos projetos
+ * daqui nao usa sprint nenhuma:
+ *
+ *   - **quadro Scrum**: precisa ter sprint. Item sem sprint num projeto que tem
+ *     sprint e, por definicao, backlog.
+ *   - **quadro Kanban**: nao ha sprint para ter; o que separa e estar no quadro
+ *     e nao no backlog dele. Um quadro sem backlog habilitado nao deixa ninguem
+ *     de fora, e esta certo: la todo item ja e trabalho aceito.
+ *   - **projeto sem quadro agil** (balcao de chamados, JSM): fica de fora. Nao
+ *     ha sprint nem backlog para consultar, entao nao ha o que o grafico prometa
+ *     estar medindo.
+ *
+ * `quadro_tipo` e `no_backlog` sao carimbados na sincronizacao (ver
+ * `resolverQuadros`), nao vem na propria issue. Base sincronizada antes desses
+ * campos existirem responde `false` para tudo — de proposito: melhor o cartao
+ * dizer que falta sincronizar do que desenhar uma linha com a base errada.
+ */
+export function ehDeSprint(item) {
+  if (!item) return false;
+  if (item.quadro_tipo === 'kanban') return !item.no_backlog;
+  if (item.quadro_tipo === 'scrum') return Boolean(String(item.sprint ?? '').trim());
+  return false;
 }
 
 // ------------------------------------------------------------ prioridade
@@ -425,6 +498,7 @@ export function normalizarLinha(bruto) {
   const projeto = String(bruto.projeto ?? '').trim();
 
   const resolucao = normalizarResolucao(bruto.resolucao);
+  const { sprint, sprint_estado: sprintEstado } = normalizarSprint(bruto.sprint);
   let { rotulo: status, categoria } = canonizarStatus(statusOrigem, bruto.categoria_api);
   if (categoria === 'Concluído' && ehResolucaoNaoEntregue(resolucao)) {
     status = 'Cancelado';
@@ -454,6 +528,10 @@ export function normalizarLinha(bruto) {
     projeto,
     origem,
     espaco: normalizarEspaco(origem, projeto, chave),
+    // a sprint sai da propria issue; ja o quadro e o backlog dependem de
+    // consultar o quadro, e so `resolverQuadros()` os carimba
+    sprint,
+    sprint_estado: sprintEstado,
     pai,
     pai_tipo: pai ? normalizarTipo(bruto.pai_tipo) : '',
     pai_resumo: pai ? String(bruto.pai_resumo ?? '').trim() : '',
