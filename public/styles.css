@@ -59,9 +59,21 @@ input[type="date"] {
 .btn.secundario { background: rgba(255,255,255,.14); color: #fff; }
 .btn.secundario:hover { background: rgba(255,255,255,.26); }
 
-/* ------------------------------------------------------------ grade */
+/* ------------------------------------------------------------ grade
 
-.painel { padding: 16px; display: grid; gap: 14px; max-width: 1600px; margin: 0 auto; }
+   O corpo é lateral de filtros + painel, lado a lado. A lateral encosta na
+   borda da janela e vai do topo até embaixo; quem centraliza e limita a
+   largura é o painel, sozinho. Ela é `sticky` logo abaixo do cabeçalho — daí
+   `--altura-topo`, que o app.js mede e atualiza (o cabeçalho quebra de linha e
+   muda de altura conforme a janela).                                        */
+
+.corpo { display: flex; align-items: flex-start; }
+
+.painel {
+  flex: 1; min-width: 0;
+  display: grid; gap: 14px;
+  padding: 16px; max-width: 1616px; margin: 0 auto;
+}
 .linha { display: grid; gap: 14px; }
 .linha-1 { grid-template-columns: 1fr; }
 .linha-2 { grid-template-columns: 1fr 1fr 190px; }
@@ -70,8 +82,16 @@ input[type="date"] {
 .linha-4 { grid-template-columns: 3fr 2fr; }
 .linha-5 { grid-template-columns: 2fr 1fr; }
 
+/* a lateral come ~300px da largura: os cartões empilham antes do que
+   empilhariam se o painel ocupasse a janela inteira */
+@media (max-width: 1450px) {
+  .linha-2 { grid-template-columns: 1fr 1fr; }
+  .linha-2 .coluna-kpis { grid-column: span 2; flex-direction: row; }
+}
+
 @media (max-width: 1150px) {
   .linha-1, .linha-2, .linha-3, .linha-4, .linha-5 { grid-template-columns: 1fr; }
+  .linha-2 .coluna-kpis { grid-column: auto; }
   .coluna-kpis { flex-direction: row; }
 }
 
@@ -99,151 +119,256 @@ input[type="date"] {
 .btn.btn-no-titulo:hover { background: #d8e6f7; }
 .btn.btn-no-titulo:disabled { opacity: .6; cursor: progress; }
 
-/* ------------------------------------------------------- faixa de filtros
+/* ====================================================== barra de filtros
 
-   Responsável | Espaço | Épico em três colunas paralelas, entre o cabeçalho e
-   o painel. Cada coluna tem um tom próprio — a régua no topo, a barra de
-   proporção atrás de cada linha e a pílula do filtro no cabeçalho usam o mesmo
-   `--tom`, e é o que amarra "esta pílula veio daquela coluna" sem precisar de
-   legenda.                                                                  */
+   Responsável → Espaço → Épico, um bloco embaixo do outro numa lateral escura
+   que vai do cabeçalho ao pé da janela. Ela não é um cartão: encosta na borda,
+   não tem contorno nem raio, e continua o azul do topo — lateral e cabeçalho
+   são a mesma casca, e o painel claro é o conteúdo dentro dela.
 
-.tom-0 { --tom: #4472c4; --tom-fraco: #e7eefa; --tom-forte: #2d5399; }
-.tom-1 { --tom: #2f9e8f; --tom-fraco: #e2f4f1; --tom-forte: #1d6b60; }
-.tom-2 { --tom: #8a63c4; --tom-fraco: #efe9f8; --tom-forte: #5f4295; }
+   O desenho de cada linha é uma ficha com as iniciais + rótulo + total, como
+   numa lista de navegação. As legendas (RESPONSÁVEL, ESPAÇO, ÉPICO e os nomes
+   das áreas) são só texto miúdo e apagado: separam sem desenhar caixa.
 
-.faixa-envolucro { max-width: 1600px; margin: 0 auto; padding: 16px 16px 0; }
+   Cada nível tem um tom próprio. No claro ele pinta pílula e barra; aqui no
+   escuro quem aparece é `--tom-vivo`, uma versão mais clara do mesmo matiz —
+   o original não teria contraste sobre o azul do fundo.                     */
 
-.faixa-filtros {
-  background: var(--cartao);
-  border: 1px solid var(--borda);
-  border-radius: var(--raio);
-  overflow: hidden;
-  box-shadow: 0 1px 2px rgba(31, 78, 121, .05);
+.tom-0 { --tom: #4472c4; --tom-fraco: #e7eefa; --tom-forte: #2d5399; --tom-vivo: #6ea8ff; --tom-vivo-rgb: 110 168 255; }
+.tom-1 { --tom: #2f9e8f; --tom-fraco: #e2f4f1; --tom-forte: #1d6b60; --tom-vivo: #3fd3ba; --tom-vivo-rgb: 63 211 186; }
+.tom-2 { --tom: #8a63c4; --tom-fraco: #efe9f8; --tom-forte: #5f4295; --tom-vivo: #b995f5; --tom-vivo-rgb: 185 149 245; }
+
+.lateral {
+  /* a paleta do escuro vive aqui: tudo lá dentro herda destas quatro */
+  --lat-texto: #eef4fc;
+  --lat-suave: #9db6d4;
+  --lat-apagado: #7d99ba;
+  --lat-linha: rgba(255, 255, 255, .09);
+
+  flex: none; width: 284px;
+  position: sticky;
+  top: var(--altura-topo, 62px);
+  height: calc(100vh - var(--altura-topo, 62px));
+  display: flex; flex-direction: column;
+  background: linear-gradient(178deg, #1f4e79 0%, #1a4368 52%, #14344f 100%);
+  color: var(--lat-texto);
+  box-shadow: 1px 0 0 rgba(9, 32, 54, .5), 4px 0 22px rgba(15, 46, 77, .13);
+  transition: width .2s ease;
+}
+
+/* ---------------------------------------------------------------- lombada
+
+   Recolhida a lateral vira uma faixa estreita com o botão redondo, o nome na
+   vertical e o número do que está marcado: some da vista sem sumir do alcance,
+   e o painel fica com a largura toda.                                       */
+
+.lateral.recolhida { width: 62px; }
+.lateral.recolhida .lateral-topo,
+.lateral.recolhida .lateral-corpo { display: none; }
+
+.lateral-aba {
+  display: none;
+  flex: 1; flex-direction: column; align-items: center; gap: 14px;
+  padding: 18px 0;
+  border: 0; background: none; cursor: pointer;
+  font: inherit; color: var(--lat-suave);
+}
+.lateral.recolhida .lateral-aba { display: flex; }
+.lateral-aba-icone {
+  display: flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 11px;
+  background: rgba(255, 255, 255, .11);
+  color: var(--lat-texto); font-size: 14px;
+  transition: background .16s ease;
+}
+.lateral-aba:hover .lateral-aba-icone { background: rgba(255, 255, 255, .2); }
+.lateral-aba:focus-visible { outline: 2px solid var(--tom-vivo, #6ea8ff); outline-offset: -3px; }
+.lateral-aba-texto {
+  writing-mode: vertical-rl;
+  font-size: 11px; font-weight: 600; letter-spacing: 1.6px; text-transform: uppercase;
 }
 
 /* --------------------------------------------------------------- cabeçalho */
 
-.faixa-topo {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
-  padding: 8px 11px;
-  background: linear-gradient(180deg, #f8fbff, #eaf1fa);
-  border-bottom: 1px solid var(--borda);
-}
-.faixa-topo h2 {
-  margin: 0; flex: none;
-  font-size: 10.5px; font-weight: 700; letter-spacing: .9px;
-  text-transform: uppercase; color: var(--suave);
-}
-
-.faixa-vazia { flex: 1; font-size: 11.5px; color: var(--suave); }
-.faixa-vazia.oculto { display: none; }
-
-.btn-faixa {
+.lateral-topo {
   flex: none;
-  border: 1px solid var(--borda); border-radius: 5px;
-  background: #fff; color: var(--azul-escuro);
-  padding: 3px 9px; font: inherit; font-size: 11.5px; font-weight: 600;
-  cursor: pointer;
+  display: flex; align-items: center; gap: 9px;
+  padding: 18px 18px 14px;
 }
-.btn-faixa:hover { background: var(--azul-claro); }
-.btn-faixa:focus-visible { outline: 2px solid var(--azul); outline-offset: 1px; }
-.btn-faixa.oculto { display: none; }
+.lateral-topo h2 {
+  margin: 0; flex: 1;
+  font-size: 17px; font-weight: 700; letter-spacing: .2px;
+  color: #fff;
+}
 
-/* a seta aponta para baixo (fecha) e vira para cima quando já está fechada */
-.btn-recolher { width: 27px; padding: 3px 0; text-align: center; }
-.btn-recolher span { display: inline-block; transition: transform .18s ease; }
-.faixa-filtros.recolhida .btn-recolher span { transform: rotate(-180deg); }
-.faixa-filtros.recolhida .faixa-colunas { display: none; }
+/* quantos filtros estão marcados — o único número que a lombada ainda mostra */
+.lateral-conta {
+  flex: none; min-width: 21px; padding: 2px 7px; border-radius: 20px;
+  background: rgba(255, 255, 255, .16); color: #fff;
+  font-size: 11px; font-weight: 700; text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+.lateral-conta.oculto { display: none; }
 
-/* ------------------------------------------------------ pílulas do que está marcado */
+/* os botões da lateral são discretos: fundo translúcido, sem contorno, e só
+   ganham corpo no hover — como os ícones do cabeçalho no modelo */
+.btn-lateral {
+  flex: none;
+  border: 0; border-radius: 9px;
+  background: rgba(255, 255, 255, .1); color: var(--lat-texto);
+  padding: 5px 11px; font: inherit; font-size: 11.5px; font-weight: 600;
+  cursor: pointer; transition: background .16s ease;
+}
+.btn-lateral:hover { background: rgba(255, 255, 255, .2); }
+.btn-lateral:focus-visible { outline: 2px solid #6ea8ff; outline-offset: 1px; }
+.btn-lateral.oculto { display: none; }
 
-.chips-filtro { display: flex; flex-wrap: wrap; gap: 5px; flex: 1; min-width: 0; }
-/* sem nada marcado ela sai da conta do flex, senão dividiria o espaço com o
-   aviso de "nada marcado" e empurraria o texto para o meio da faixa */
+.btn-lateral.limpar {
+  justify-self: start;
+  background: none; padding: 3px 0;
+  color: var(--lat-apagado); font-size: 11.5px; font-weight: 500;
+  text-decoration: underline; text-underline-offset: 3px;
+}
+.btn-lateral.limpar:hover { background: none; color: #fff; }
+
+.btn-recolher { width: 28px; height: 28px; padding: 0; font-size: 15px; line-height: 1; }
+.btn-recolher span { display: inline-block; transition: transform .2s ease; }
+
+/* ------------------------------------------------------------------ corpo */
+
+.lateral-corpo {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
+  overflow-y: auto;
+}
+/* barra de rolagem discreta: no escuro a padrão do sistema salta demais */
+.lateral-corpo::-webkit-scrollbar, .coluna-lista::-webkit-scrollbar { width: 10px; }
+.lateral-corpo::-webkit-scrollbar-thumb, .coluna-lista::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, .16); border-radius: 20px;
+  border: 3px solid transparent; background-clip: padding-box;
+}
+.lateral-corpo::-webkit-scrollbar-thumb:hover,
+.coluna-lista::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, .3); background-clip: padding-box; }
+
+.lateral-selecao {
+  flex: none;
+  display: grid; gap: 9px;
+  padding: 0 18px 16px;
+}
+.lateral-vazia {
+  margin: 0; font-size: 11.5px; line-height: 1.4; color: var(--lat-apagado);
+}
+.lateral-vazia.oculto { display: none; }
+
+/* ------------------------------------------------ pílulas do que está marcado */
+
+.chips-filtro { display: flex; flex-wrap: wrap; gap: 5px; min-width: 0; }
 .chips-filtro:empty { display: none; }
 
 .chip-filtro {
   display: inline-flex; align-items: center; gap: 6px;
-  max-width: 260px;
-  border: 1px solid var(--tom); border-radius: 20px;
-  background: var(--tom-fraco); color: var(--tom-forte);
-  padding: 2px 4px 2px 3px;
-  font: inherit; font-size: 11.5px; font-weight: 600;
-  cursor: pointer;
+  max-width: 100%;
+  border: 0; border-radius: 20px;
+  background: rgba(255, 255, 255, .12); color: var(--lat-texto);
+  padding: 3px 5px 3px 8px;
+  font: inherit; font-size: 11.5px; font-weight: 500;
+  cursor: pointer; transition: background .16s ease;
 }
-.chip-filtro:hover { background: #fff; }
-.chip-filtro:focus-visible { outline: 2px solid var(--tom); outline-offset: 1px; }
-/* o nome da dimensão vai numa cápsula sólida dentro da pílula: diz de que
-   coluna aquele filtro veio sem gastar uma legenda */
+.chip-filtro:hover { background: rgba(255, 255, 255, .22); }
+.chip-filtro:focus-visible { outline: 2px solid var(--tom-vivo); outline-offset: 1px; }
+/* o ponto colorido no lugar da cápsula com o nome do nível: no escuro a cor
+   sozinha já diz de que bloco a pílula veio, e sobra espaço para o nome */
 .chip-nivel {
-  flex: none; border-radius: 20px; padding: 1px 7px;
-  background: var(--tom); color: #fff;
-  font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px;
+  flex: none; width: 7px; height: 7px; padding: 0; border-radius: 50%;
+  background: var(--tom-vivo);
+  font-size: 0; overflow: hidden;
 }
 .chip-nome { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.chip-x { flex: none; padding-right: 5px; font-size: 10px; opacity: .55; }
-.chip-filtro:hover .chip-x { opacity: 1; }
+.chip-x {
+  flex: none; width: 15px; height: 15px; border-radius: 50%;
+  text-align: center; line-height: 15px; font-size: 9px;
+  background: rgba(255, 255, 255, .12); opacity: .7;
+}
+.chip-filtro:hover .chip-x { opacity: 1; background: rgba(255, 255, 255, .28); }
 
-/* ------------------------------------------------------------ colunas */
+/* ------------------------------------------------------------------ blocos
 
-.faixa-colunas { display: grid; grid-template-columns: repeat(3, 1fr); }
+   Os três níveis, empilhados, dividindo entre si a altura que sobra. Em tela
+   baixa cada lista encolhe até o mínimo e a lateral inteira passa a rolar.  */
+
+.lateral-niveis { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
 .coluna {
-  min-width: 0; display: flex; flex-direction: column;
-  border-top: 3px solid var(--tom);
-  border-left: 1px solid #e6edf6;
+  min-width: 0; min-height: 146px;
+  flex: 1 1 0;
+  display: flex; flex-direction: column;
+  padding-bottom: 10px;
 }
-.coluna:first-child { border-left: 0; }
+/* a lista de responsáveis é a mais longa das três — tem os títulos de área
+   pelo meio — então fica com uma fatia maior da altura */
+.coluna.tom-0 { flex: 1.4 1 0; min-height: 190px; }
 
-.coluna-topo { display: flex; align-items: center; gap: 8px; padding: 8px 10px 6px; }
+.coluna-topo { display: flex; align-items: center; gap: 8px; padding: 4px 18px 7px; }
 .coluna-titulo {
   flex: none;
-  font-size: 10.5px; font-weight: 700; letter-spacing: .8px;
-  text-transform: uppercase; color: var(--tom-forte);
+  font-size: 10.5px; font-weight: 700; letter-spacing: 1.1px;
+  text-transform: uppercase; color: var(--lat-apagado);
 }
 
-/* de quem a coluna está falando. Com um nó aberto à esquerda vira um botão que
-   solta a abertura; sem nada aberto, só informa o tamanho do nível */
+/* de quem o bloco está falando. Com um nó aberto acima vira um botão que solta
+   a abertura; sem nada aberto, só informa o tamanho do nível */
 .coluna-escopo {
   display: inline-flex; align-items: center; gap: 5px;
-  margin-left: auto; max-width: 62%;
-  border: 0; border-radius: 20px; padding: 2px 8px;
-  background: var(--tom); color: #fff;
+  margin-left: auto; max-width: 60%;
+  border: 0; border-radius: 20px; padding: 2px 9px;
+  background: rgb(var(--tom-vivo-rgb) / .26);
+  color: var(--tom-vivo);
   font: inherit; font-size: 10.5px; font-weight: 600;
-  cursor: pointer;
+  cursor: pointer; transition: background .16s ease;
 }
-.coluna-escopo:hover { background: var(--tom-forte); }
+.coluna-escopo:hover { background: rgb(var(--tom-vivo-rgb) / .45); color: #fff; }
 .coluna-escopo-nome { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .coluna-escopo.vazio {
-  background: none; color: var(--suave); font-weight: 400;
+  background: none; color: var(--lat-apagado); font-weight: 500;
   padding: 2px 0; cursor: default;
 }
 
 .coluna-busca {
-  margin: 0 10px 6px; min-width: 0;
-  border: 1px solid var(--borda); border-radius: 5px;
-  padding: 4px 8px; font: inherit; font-size: 11.5px;
-  color: var(--texto); background: #fbfdff;
+  margin: 0 18px 8px; min-width: 0;
+  border: 0; border-radius: 9px;
+  background: rgba(255, 255, 255, .09); color: var(--lat-texto);
+  padding: 6px 10px; font: inherit; font-size: 11.5px;
 }
-.coluna-busca:focus { outline: 2px solid var(--tom); outline-offset: -1px; background: #fff; }
+.coluna-busca::placeholder { color: var(--lat-apagado); }
+.coluna-busca:focus {
+  outline: none; background: rgba(255, 255, 255, .16);
+  box-shadow: inset 0 0 0 1.5px var(--tom-vivo);
+}
+/* o ✕ nativo do type=search é preto e some no fundo escuro */
+.coluna-busca::-webkit-search-cancel-button { filter: invert(1); opacity: .5; cursor: pointer; }
 
 .coluna-lista {
-  list-style: none; margin: 0; padding: 0 7px 8px;
-  height: 194px; overflow: auto;
-  display: grid; gap: 2px; align-content: start;
+  list-style: none; margin: 0; padding: 0 10px 2px;
+  flex: 1; min-height: 48px; overflow: auto;
+  display: grid; gap: 1px; align-content: start;
 }
 .coluna-vazia, .coluna-indisponivel {
-  color: var(--suave); font-size: 11.5px; text-align: center;
-  padding: 18px 8px; margin: 0;
+  color: var(--lat-apagado); font-size: 11.5px; text-align: center;
+  padding: 16px 8px; margin: 0;
 }
 
-/* ------------------------------------------------------------ linhas */
+/* ------------------------------------------------------------------ linhas
+
+   Ficha com as iniciais + rótulo + total, como um item de menu. Marcada, a
+   linha ganha fundo, a ficha vira sólida no tom do nível e um traço do mesmo
+   tom aparece na borda esquerda — os três dizem a mesma coisa, e é o que
+   permite reconhecer o que está filtrado de relance.                       */
 
 .opcao {
   position: relative; overflow: hidden;
-  display: flex; align-items: center; gap: 7px;
-  padding: 5px 4px 5px 7px; border-radius: 5px;
-  font-size: 12.5px; color: var(--texto);
+  display: flex; align-items: center; gap: 9px;
+  padding: 5px 6px 5px 8px; border-radius: 9px;
+  font-size: 12.5px; color: var(--lat-suave);
   cursor: pointer; user-select: none;
   transition: background .14s ease, color .14s ease;
 }
@@ -251,53 +376,130 @@ input[type="date"] {
    números. Fica atrás de tudo; o resto do conteúdo sobe por posicionamento */
 .opcao-barra {
   position: absolute; left: 0; top: 0; bottom: 0;
-  background: var(--tom-fraco); border-radius: 5px;
+  background: rgba(255, 255, 255, .05); border-radius: 9px;
   transition: width .35s cubic-bezier(.2, .8, .3, 1);
 }
 .opcao > :not(.opcao-barra) { position: relative; }
 
-.opcao:hover { background: #f2f7fd; }
-.opcao:focus-visible { outline: 2px solid var(--tom); outline-offset: -1px; }
-.opcao.ativa { background: var(--tom); color: #fff; font-weight: 600; }
-.opcao.ativa .opcao-barra { background: rgba(255, 255, 255, .22); }
-/* aberta = é dela que a coluna seguinte fala. Um anel, e não um preenchimento:
-   abrir não é filtrar, e as duas coisas não podem parecer a mesma */
-.opcao.aberta:not(.ativa) { box-shadow: inset 0 0 0 1.5px var(--tom); background: #fff; }
+.opcao:hover { background: rgba(255, 255, 255, .09); color: var(--lat-texto); }
+.opcao:focus-visible { outline: 2px solid var(--tom-vivo); outline-offset: -2px; }
 
-.opcao-marca {
-  flex: none; width: 9px; height: 9px; border-radius: 50%;
-  border: 1.5px solid var(--tom); opacity: .5;
+.opcao.ativa { background: rgba(255, 255, 255, .13); color: #fff; font-weight: 600; }
+.opcao.ativa .opcao-barra { background: rgb(var(--tom-vivo-rgb) / .22); }
+.opcao.ativa::after {
+  content: ''; position: absolute; left: 0; top: 6px; bottom: 6px;
+  width: 3px; border-radius: 0 3px 3px 0; background: var(--tom-vivo);
 }
-.opcao:hover .opcao-marca { opacity: .8; }
-.opcao.ativa .opcao-marca { background: #fff; border-color: #fff; opacity: 1; }
+/* aberta = é dela que o bloco seguinte fala. Um anel, e não um preenchimento:
+   abrir não é filtrar, e as duas coisas não podem parecer a mesma */
+.opcao.aberta:not(.ativa) {
+  box-shadow: inset 0 0 0 1.5px rgb(var(--tom-vivo-rgb) / .55);
+  color: var(--lat-texto);
+}
+
+/* a ficha das iniciais: o quadradinho arredondado que abre cada linha */
+.opcao-ficha {
+  flex: none;
+  display: flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; border-radius: 8px;
+  background: rgba(255, 255, 255, .1); color: var(--lat-suave);
+  font-size: 9.5px; font-weight: 700; letter-spacing: .3px;
+  transition: background .14s ease, color .14s ease;
+}
+.opcao:hover .opcao-ficha { background: rgba(255, 255, 255, .17); color: #fff; }
+.opcao.ativa .opcao-ficha { background: var(--tom-vivo); color: #10314e; }
+.opcao.aberta:not(.ativa) .opcao-ficha { color: var(--tom-vivo); }
 
 .opcao-rotulo { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.opcao-qtd { flex: none; font-size: 11.5px; opacity: .65; font-variant-numeric: tabular-nums; }
-.opcao.ativa .opcao-qtd { opacity: .9; }
+.opcao-qtd {
+  flex: none; font-size: 11px; color: var(--lat-apagado);
+  font-variant-numeric: tabular-nums;
+}
+.opcao:hover .opcao-qtd { color: var(--lat-suave); }
+.opcao.ativa .opcao-qtd { color: rgba(255, 255, 255, .8); }
 
 .opcao-entrar {
-  flex: none; width: 17px; height: 17px; border-radius: 4px;
-  text-align: center; line-height: 16px;
-  color: var(--tom-forte); font-size: 13px; font-weight: 700;
+  flex: none; width: 18px; height: 18px; border-radius: 5px;
+  text-align: center; line-height: 17px;
+  color: var(--lat-texto); font-size: 13px; font-weight: 700;
   opacity: 0; transition: opacity .14s ease;
 }
 .opcao:hover .opcao-entrar, .opcao:focus-visible .opcao-entrar,
-.opcao.aberta .opcao-entrar { opacity: .55; }
-.opcao-entrar:hover { opacity: 1 !important; background: rgba(255, 255, 255, .75); }
-.opcao.ativa .opcao-entrar { color: #fff; }
-.opcao.ativa .opcao-entrar:hover { background: rgba(255, 255, 255, .28); }
-/* folha: nada a abrir, mas o espaço fica para os totais alinharem na coluna */
+.opcao.aberta .opcao-entrar { opacity: .6; }
+.opcao-entrar:hover { opacity: 1 !important; background: rgba(255, 255, 255, .18); }
+/* folha: nada a abrir, mas o espaço fica para os totais alinharem na lista */
 .opcao-entrar.folha { opacity: 0 !important; }
 
-/* ------------------------------------------------------------ faixa estreita
+/* ------------------------------------------------------------------- áreas
 
-   Abaixo disso três colunas viram três faixas de rolagem lado a lado inúteis:
-   elas empilham, e cada lista fica mais baixa para as três caberem na tela. */
+   A lista de responsáveis sai agrupada por setor — Desenvolvimento, Suporte,
+   Gestão, e quem ainda não foi mapeado. A legenda é miúda e apagada, como as
+   do modelo, mas também é botão: marca ou desmarca a área inteira. A marca à
+   esquerda dela diz em que pé o grupo está — vazia, meia ou cheia.          */
+
+.grupo-area { list-style: none; }
+
+.area-topo {
+  display: flex; align-items: center; gap: 7px;
+  margin: 10px 0 3px; padding: 3px 8px;
+  border-radius: 7px;
+  color: var(--lat-apagado);
+  font-size: 9.5px; font-weight: 700; letter-spacing: 1.1px; text-transform: uppercase;
+  cursor: pointer; user-select: none;
+  transition: background .14s ease, color .14s ease;
+}
+.grupo-area:first-child .area-topo { margin-top: 2px; }
+.area-topo:hover { background: rgba(255, 255, 255, .08); color: var(--lat-texto); }
+.area-topo:focus-visible { outline: 2px solid var(--tom-vivo); outline-offset: -1px; }
+
+.area-marca {
+  flex: none; width: 9px; height: 9px; border-radius: 3px;
+  border: 1.5px solid currentColor; opacity: .6;
+  transition: background .14s ease, opacity .14s ease;
+}
+.area-topo:hover .area-marca { opacity: .9; }
+.grupo-area.parte .area-topo, .grupo-area.toda .area-topo { color: var(--tom-vivo); }
+.grupo-area.parte .area-marca {
+  opacity: 1;
+  background: linear-gradient(135deg, currentColor 0 50%, transparent 50% 100%);
+}
+.grupo-area.toda .area-marca { opacity: 1; background: currentColor; }
+
+.area-nome { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.area-qtd { flex: none; font-weight: 600; opacity: .75; font-variant-numeric: tabular-nums; }
+
+.area-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+
+/* ------------------------------------------------------------ tela estreita
+
+   Abaixo disso a lateral não cabe ao lado do painel: ela volta a ser uma faixa
+   escura no alto, com os três níveis lado a lado. Recolher continua valendo —
+   só que agora fecha para cima, e não para o lado.                          */
+
+@media (max-width: 1150px) {
+  .corpo { display: block; }
+
+  .lateral {
+    position: static; width: auto; height: auto;
+    background: linear-gradient(160deg, #1f4e79 0%, #1a4368 60%, #16395c 100%);
+  }
+  .lateral.recolhida { width: auto; }
+  .lateral.recolhida .lateral-topo { display: flex; }
+  .lateral.recolhida .lateral-aba,
+  .lateral .lateral-aba { display: none; }
+  .btn-recolher span { transform: rotate(-90deg); }
+  .lateral.recolhida .btn-recolher span { transform: rotate(90deg); }
+
+  .lateral-corpo { overflow: visible; }
+  .lateral-niveis { display: grid; grid-template-columns: repeat(3, 1fr); padding-bottom: 8px; }
+  .coluna { flex: none; min-height: 0; }
+  .coluna.tom-0 { flex: none; min-height: 0; }
+  .coluna-lista { flex: none; height: 196px; }
+}
 
 @media (max-width: 860px) {
-  .faixa-colunas { grid-template-columns: 1fr; }
-  .coluna { border-left: 0; border-top: 3px solid var(--tom); }
-  .coluna-lista { height: 150px; }
+  .lateral-niveis { grid-template-columns: 1fr; }
+  .coluna-lista { height: 152px; }
 }
 
 /* ------------------------------------------------------------ kpis */
@@ -349,8 +551,6 @@ input[type="date"] {
 .variacao.cai { color: #b03a3a; }
 .variacao.estavel { color: var(--suave); font-weight: 400; }
 .variacao em { font-style: normal; font-weight: 400; opacity: .8; font-size: .86em; }
-
-.nota-cartao { margin: 9px 0 0; font-size: 11px; color: var(--suave); line-height: 1.4; }
 
 td.numero, th.numero { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 td.numero.destaque { font-weight: 600; color: var(--azul-escuro); }
@@ -735,11 +935,15 @@ body.travado { overflow: hidden; }
   html, body { background: #fff; font-size: 11px; }
 
   /* fora do relatorio: controles, modais e o que e operacao, nao analise.
-     A faixa de filtros e um controle: o que dela importa no papel — o que
-     esta marcado — ja sai no bloco de filtros da capa, e as tres colunas
-     inteiras ocupariam paginas. */
-  .topo, .modal, .portao, .tabela-secao, .btn, .btn-mini, .faixa-envolucro,
+     A barra de filtros e um controle: o que dela importa no papel — o que
+     esta marcado — ja sai no bloco de filtros da capa, e os tres niveis
+     inteiros ocupariam paginas. */
+  .topo, .modal, .portao, .tabela-secao, .btn, .btn-mini, .lateral,
   #secao-sincronizacoes, #secao-importacoes { display: none !important; }
+
+  /* a lateral saiu: o painel volta a ser o documento inteiro */
+  .corpo { display: block; padding: 0; max-width: none; }
+  .painel { margin-top: 0; }
 
   /* o portão trava a rolagem na tela; na impressão isso cortaria o relatório */
   body.travado { overflow: visible !important; }
@@ -851,7 +1055,6 @@ body.travado { overflow: hidden; }
   .kpis-linha span { font-size: 8.5px; }
   .kpis-linha .variacao { font-size: 13px; }
   .variacao { font-size: 9.5px; }
-  .nota-cartao { font-size: 8.5px; margin-top: 3mm; }
   /* no papel a linha selecionada ja aparece no bloco de filtros da capa;
      desbotar as outras so gastaria tinta e atrapalharia a leitura */
   .linha-colab.apagada { opacity: 1; }

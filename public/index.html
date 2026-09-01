@@ -63,29 +63,46 @@
   </div>
 </header>
 
-<!-- Faixa de filtros: responsável → espaço → épico, em três colunas paralelas.
-     Escolher na primeira coluna preenche a segunda, e assim por diante; sem
-     escolha nenhuma cada coluna mostra o nível inteiro somado. Fica fora do
-     <main> de propósito — o painel esmaece durante o carregamento
+<!-- Barra lateral de filtros: responsável → espaço → épico, um bloco embaixo do
+     outro. Escolher no primeiro bloco preenche o segundo, e assim por diante;
+     sem escolha nenhuma cada bloco mostra o nível inteiro somado. Os
+     responsáveis saem agrupados por área (ver AREAS em app.js).
+
+     Fica fora do <main> de propósito — o painel esmaece durante o carregamento
      (.painel.carregando) e o comando do filtro não pode apagar junto com o que
-     ele filtra. Ver montarFiltros() em app.js. -->
-<div class="faixa-envolucro">
-<section id="faixa-filtros" class="faixa-filtros">
-  <header class="faixa-topo">
+     ele filtra. É `position: sticky` logo abaixo do topo: rolar o painel não
+     tira os filtros da vista. Ver montarFiltros() em app.js. -->
+<div class="corpo">
+<aside id="lateral-filtros" class="lateral">
+
+  <!-- só aparece com a lateral recolhida: a lombada que a traz de volta -->
+  <button id="btn-abrir-lateral" class="lateral-aba" aria-expanded="true"
+    aria-controls="lateral-niveis" title="Abrir a barra de filtros">
+    <span class="lateral-aba-icone" aria-hidden="true">☰</span>
+    <span class="lateral-aba-texto">Filtros</span>
+    <span id="lateral-aba-conta" class="lateral-conta oculto"></span>
+  </button>
+
+  <header class="lateral-topo">
     <h2>Filtros</h2>
-    <div id="chips-filtro" class="chips-filtro"></div>
-    <span id="faixa-vazia" class="faixa-vazia">nada marcado — o painel mostra a base inteira</span>
-    <button id="btn-limpar-filtros-arvore" class="btn-faixa oculto"
-      title="Desmarcar responsáveis, espaços e épicos">limpar</button>
-    <button id="btn-recolher" class="btn-faixa btn-recolher" aria-expanded="true"
-      aria-controls="faixa-colunas" title="Recolher a faixa de filtros">
-      <span aria-hidden="true">▾</span>
+    <span id="lateral-conta" class="lateral-conta oculto"></span>
+    <button id="btn-recolher" class="btn-lateral btn-recolher" aria-expanded="true"
+      aria-controls="lateral-niveis" title="Recolher a barra de filtros">
+      <span aria-hidden="true">‹</span>
     </button>
   </header>
 
-  <div id="faixa-colunas" class="faixa-colunas"></div>
-</section>
-</div>
+  <div class="lateral-corpo">
+    <div class="lateral-selecao">
+      <div id="chips-filtro" class="chips-filtro"></div>
+      <p id="lateral-vazia" class="lateral-vazia">Nada marcado — o painel mostra a base inteira.</p>
+      <button id="btn-limpar-filtros-arvore" class="btn-lateral limpar oculto"
+        title="Desmarcar responsáveis, espaços e épicos">Limpar seleção</button>
+    </div>
+
+    <div id="lateral-niveis" class="lateral-niveis"></div>
+  </div>
+</aside>
 
 <main id="painel" class="painel">
 
@@ -171,7 +188,6 @@
           <tbody></tbody>
         </table>
       </div>
-      <p id="produtividade-nota" class="nota-cartao"></p>
     </div>
 
     <div id="card-semanas" class="cartao grafico">
@@ -192,7 +208,6 @@
       </h2>
       <ul id="burndown-kpis" class="kpis-linha"></ul>
       <div id="grafico-burndown" class="area-grafico"></div>
-      <p id="burndown-nota" class="nota-cartao"></p>
     </div>
     <div id="card-ranking" class="cartao">
       <h2>
@@ -202,7 +217,6 @@
       <div id="ranking-podio" class="podio"></div>
       <ul id="ranking-conquistas" class="conquistas"></ul>
       <div id="ranking-tabela"></div>
-      <p id="ranking-nota" class="nota-cartao"></p>
     </div>
   </section>
 
@@ -262,6 +276,7 @@
     </div>
   </section>
 </main>
+</div>
 
 <footer id="rodape-relatorio" class="so-impressao">
   <span>Dashboard Jira · relatório gerado a partir da base sincronizada</span>

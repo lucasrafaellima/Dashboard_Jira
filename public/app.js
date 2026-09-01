@@ -595,16 +595,19 @@ function linhaBurndown(b, { largura } = {}) {
   return svg(L, A, saida);
 }
 
-/** Faixa de indicadores e nota do cartão de burndown. */
+/**
+ * Faixa de indicadores do cartão de burndown.
+ *
+ * Sem dado, quem avisa é o próprio gráfico (ver `linhaBurndown`): aqui só se
+ * limpa o que ficou da carga anterior.
+ */
 function renderizarBurndown(b) {
   const semana = $('#burndown-semana');
   const kpis = $('#burndown-kpis');
-  const nota = $('#burndown-nota');
 
   if (!b?.dias?.length) {
     semana.textContent = '';
     kpis.innerHTML = '';
-    nota.textContent = 'Indisponível — reinicie o servidor para carregar esta métrica.';
     return;
   }
 
@@ -638,24 +641,6 @@ function renderizarBurndown(b) {
   ]
     .map(([r, v, dica]) => `<li title="${esc(dica)}"><b>${v}</b><span>${r}</span></li>`)
     .join('');
-
-  nota.textContent = [
-    'A linha cheia é o que ainda estava em aberto no fim de cada dia; a pontilhada é a reta que'
-      + ' zeraria na sexta a fila do fim da segunda. As duas partem do mesmo ponto: o que entra'
-      + ' depois empurra a linha cheia para cima da reta.',
-    b.semDadoDeSprint
-      ? 'A base ainda não tem informação de sprint: sincronize com o Jira para o gráfico voltar.'
-      : 'Só entra trabalho de sprint: em projeto com sprint, quem está numa delas; em projeto'
-        + ' Kanban, quem está no quadro. Backlog e projeto sem quadro ágil ficam de fora'
-        + (b.foraDeSprint ? ` (${num(b.foraDeSprint)} atividade(s) deste recorte).` : '.'),
-    b.emCurso
-      ? 'A semana ainda corre: a linha para no último dia fechado e os dias à frente ficam sem ponto.'
-      : null,
-    'A semana é a mesma do cartão de produtividade — clique numa barra de "Concluídas por semana"'
-      + ' para trazer o burndown para outra semana.',
-    'Espaço, épico, responsável, tipo e prioridade valem aqui; período e status, não — o gráfico'
-      + ' precisa das atividades abertas antes do recorte, e é feito de aberto contra concluído.',
-  ].filter(Boolean).join(' ');
 }
 
 // ------------------------------------------------------------ pódio por pontos
@@ -665,13 +650,20 @@ const MEDALHAS = ['🥇', '🥈', '🥉'];
 /** "3,6" — uma casa, vírgula decimal, sem o ",0" pendurado nos inteiros. */
 const dec1 = (n) => Number(n ?? 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
 
-/** Iniciais para o avatar: "Ana Paula Souza" -> "AS". */
+/**
+ * Iniciais para o avatar e para a ficha da lateral: primeira e última palavra.
+ * "Ana Paula Souza" → `AS`; "CRM-171 · Agosto" → `CA`; "rafa.ti" → `RT`.
+ *
+ * Só pedaços com letra ou número contam. Sem isso a pontuação que o Jira põe
+ * no meio dos títulos — e os parênteses de "(vazio)" — entrariam no lugar de
+ * uma letra, e a ficha sairia com um sinal solto.
+ */
 function iniciais(nome) {
-  const partes = String(nome).trim().split(/\s+/).filter(Boolean);
-  if (!partes.length) return '?';
-  const primeira = partes[0][0] ?? '';
-  const ultima = partes.length > 1 ? partes[partes.length - 1][0] ?? '' : '';
-  return (primeira + ultima).toUpperCase();
+  const palavras = String(nome).match(/[\p{L}\p{N}]+/gu) ?? [];
+  if (!palavras.length) return '?';
+  return (palavras.length > 1
+    ? palavras[0][0] + palavras[palavras.length - 1][0]
+    : palavras[0].slice(0, 2)).toUpperCase();
 }
 
 /**
@@ -714,7 +706,6 @@ function renderizarRanking(r) {
   const podio = $('#ranking-podio');
   const conquistas = $('#ranking-conquistas');
   const tabela = $('#ranking-tabela');
-  const nota = $('#ranking-nota');
   if (!podio) return;
 
   if (!r) {
@@ -722,7 +713,6 @@ function renderizarRanking(r) {
     podio.innerHTML = '';
     conquistas.innerHTML = '';
     tabela.innerHTML = vazio('Indisponível — reinicie o servidor para carregar esta métrica.');
-    nota.textContent = '';
     return;
   }
 
@@ -734,8 +724,6 @@ function renderizarRanking(r) {
     tabela.innerHTML = vazio(r.concluidas
       ? 'Nenhuma das atividades concluídas neste recorte tem story points.'
       : 'Nenhuma atividade concluída neste recorte.');
-    nota.textContent = 'Story points vêm do Jira na sincronização. Projetos que não estimam'
-      + ' (Suporte, entre outros) não aparecem aqui.';
     return;
   }
 
@@ -775,25 +763,6 @@ function renderizarRanking(r) {
       }</ul>`);
   }
   tabela.innerHTML = partes.join('');
-
-  nota.textContent = [
-    'Classifica pela média de pontos por ticket concluído: mede o peso do que a pessoa puxou,'
-      + ' não o volume. O volume aparece nas conquistas, logo acima.',
-    `Entra no pódio quem concluiu ao menos ${r.minTickets} tickets pontuados — abaixo disso`
-      + ' um único item grande viraria o primeiro lugar.',
-    r.semEstimativa
-      ? `${num(r.semEstimativa)} das ${num(r.concluidas)} conclusões do recorte não têm story`
-        + ` points (${dec1(r.cobertura)}% de cobertura) e ficaram de fora: Suporte, Acompanhamento`
-        + ' e Prioridades não estimam.'
-      : null,
-    r.epicos
-      ? `${num(r.epicos)} épico(s) ficaram de fora: os pontos deles já são a soma dos filhos.`
-      : null,
-    'Pai e subtarefa pontuados contam como tickets separados — é a unidade que cada pessoa'
-      + ' recebe, e a média é por ticket.',
-    'O filtro de responsável não recorta este cartão (senão o pódio teria uma pessoa só);'
-      + ' quem estiver marcado aparece destacado. Os demais filtros valem.',
-  ].filter(Boolean).join(' ');
 }
 
 // -------------------------------------------------------- produtividade semanal
@@ -866,7 +835,6 @@ function renderizarProdutividade(p) {
   }
 
   const { resumo, semanas, colaboradores } = p;
-  const atual = semanas[semanas.length - 1];
 
   // quando a última semana não fechou — ou porque ainda está correndo, ou porque
   // o filtro de datas cortou no meio dela — a comparação é contra o mesmo trecho
@@ -932,31 +900,6 @@ function renderizarProdutividade(p) {
     })
     .join('') || `<tr><td colspan="6">Nenhuma atividade concluída ${resumo.filtrada
       ? 'no período filtrado' : 'nas últimas semanas'} para os filtros selecionados.</td></tr>`;
-
-  const janela = semanas.length > 1
-    ? `${rotuloSemana(semanas[0].inicio, semanas[0].fim)} a ${rotuloSemana(atual.inicio, atual.fim)}`
-    : rotuloSemana(atual.inicio, atual.fim);
-  $('#produtividade-nota').textContent = [
-    `Cada atividade entra na semana em que foi concluída. Janela de`
-      + ` ${semanas.length === 1 ? '1 semana' : `${semanas.length} semanas`}`
-      + ` (${janela}), de segunda a sexta — o que fecha no sábado ou no domingo`
-      + ' conta na semana que acabou.',
-    'O ranking traz sempre todo mundo, mesmo com alguém selecionado — é por ele que se troca a'
-      + ' seleção. Os indicadores acima e o gráfico ao lado seguem quem estiver marcado.',
-    resumo.filtrada
-      ? 'A janela acompanha o filtro de período, junto com espaço, épico, tipo e prioridade. Uma'
-        + ' semana que o intervalo pega pela metade conta só os dias dentro dele e sai mais clara'
-        + ' no gráfico ao lado.'
-      : 'O filtro de período não está aplicado; espaço, épico, tipo e prioridade valem.',
-    resumo.truncada
-      ? `O período filtrado é mais longo que ${semanas.length} semanas: o cartão mostra as`
-        + ` ${semanas.length} últimas dele.`
-      : null,
-    semBase ? `${semJanela} A variação e a média ficam de fora.` : null,
-    resumo.emCurso || resumo.filtrada
-      ? null
-      : 'Sem conclusões nas últimas semanas: a janela recuou até a última semana com entregas.',
-  ].filter(Boolean).join(' ');
 }
 
 // ------------------------------------------------------------ capa do relatorio
@@ -1013,16 +956,20 @@ function montarCapaRelatorio(d, detalhe) {
     `${num(detalhe.total)} atividades no recorte · ${agora.toLocaleDateString('pt-BR')}`;
 }
 
-// ------------------------------------------------------- faixa de filtros
+// ------------------------------------------------------ barra de filtros
 //
-// Responsável → espaço → épico em três colunas paralelas, no alto do painel.
-// Escolher na coluna da esquerda estreita a do meio, e a do meio estreita a da
-// direita; sem escolha nenhuma cada coluna mostra o nível inteiro, somado. Os
-// dados vêm prontos em `dashboard.arvore` (ver `arvoreDeFiltros` em
-// metricas.js) — aqui só se decide o que cada coluna mostra e o que um clique
-// faz.
+// Responsável → espaço → épico em três blocos empilhados, numa lateral fixa à
+// esquerda do painel. Escolher no bloco de cima estreita o do meio, e o do meio
+// estreita o de baixo; sem escolha nenhuma cada bloco mostra o nível inteiro,
+// somado. Os responsáveis ainda saem agrupados por área (ver `AREAS`). Os dados
+// vêm prontos em `dashboard.arvore` (ver `arvoreDeFiltros` em metricas.js) —
+// aqui só se decide o que cada bloco mostra e o que um clique faz.
+//
+// "Coluna" continua sendo o nome do bloco no código: virou uma faixa de cima a
+// baixo em vez de lado a lado, mas o que ela é — um nível da árvore, com sua
+// busca e sua lista — não mudou.
 
-/** As três dimensões, na ordem das colunas. O índice é o nível. */
+/** As três dimensões, na ordem dos blocos. O índice é o nível. */
 const NIVEIS = ['responsaveis', 'espacos', 'epicos'];
 const TITULOS = ['Responsável', 'Espaço', 'Épico'];
 
@@ -1047,6 +994,43 @@ let rotulosEpico = new Map();
 
 /** Rótulos que são resto, e não uma categoria de verdade: vão para o fim. */
 const RESTO = new Set(['(vazio)', '(sem épico)']);
+
+/**
+ * As áreas do time. A lista de responsáveis sai agrupada por elas — é assim
+ * que a equipe se divide, e ler "Desenvolvimento" de uma vez vale mais do que
+ * caçar três nomes numa lista ordenada por volume.
+ *
+ * A comparação é por **pedaço** do nome, minúsculo e sem acento: o Jira grava
+ * o nome completo do perfil ("Franklyn Roberto da Silva") e ele muda quando a
+ * pessoa edita a conta. Vence o primeiro pedaço que casar, então os mais
+ * específicos vêm primeiro — "lucas ferreira" tem que ser testado antes de
+ * qualquer "lucas" solto.
+ *
+ * "Outros" fecha a lista sem pedaço nenhum de propósito: é o balde de quem
+ * ainda não foi mapeado. Ninguém some do filtro por não estar aqui.
+ */
+const AREAS = [
+  { nome: 'Desenvolvimento', gente: ['davi', 'franklyn', 'lucas ferreira', 'luckas'] },
+  { nome: 'Suporte', gente: ['kauan', 'suporte ti'] },
+  { nome: 'Gestão', gente: ['leandro', 'rafa.ti', 'lucas rafael'] },
+  { nome: 'Outros', gente: [] },
+];
+
+const semAcento = (texto) => texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+/** A área de um responsável; quem não casa com ninguém cai em "Outros". */
+function areaDe(nome) {
+  const alvo = semAcento(nome);
+  return AREAS.find((a) => a.gente.some((p) => alvo.includes(p))) ?? AREAS[AREAS.length - 1];
+}
+
+/** Quebra a lista de responsáveis em áreas, na ordem de `AREAS`, sem vazias. */
+function porArea(nos) {
+  const grupos = AREAS.map((area) => ({ area, nos: [] }));
+  const indice = new Map(AREAS.map((a, i) => [a.nome, i]));
+  for (const no of nos) grupos[indice.get(areaDe(no.rotulo).nome)].nos.push(no);
+  return grupos.filter((g) => g.nos.length);
+}
 
 /**
  * Junta os filhos de uma lista de nós num nível só, somando quem se repete.
@@ -1101,7 +1085,7 @@ function colunasDe(arvore) {
   return [col0, col1, ordenar(juntar(escopo1))];
 }
 
-/** Uma linha da coluna: barra de proporção, marca, rótulo, total e a seta. */
+/** Uma linha da coluna: barra de proporção, ficha, rótulo, total e a seta. */
 function opcao(no, nivel, maior) {
   const marcado = estado[NIVEIS[nivel]].has(no.valor);
   const aberto = foco[nivel] === no.valor;
@@ -1116,7 +1100,7 @@ function opcao(no, nivel, maior) {
     <div class="${classes}" tabindex="0" role="button" aria-pressed="${marcado}"
       data-nivel="${nivel}" data-valor="${esc(no.valor)}" title="${esc(dica)}">
       <span class="opcao-barra" style="width:${largura}%"></span>
-      <span class="opcao-marca" aria-hidden="true"></span>
+      <span class="opcao-ficha" aria-hidden="true">${esc(iniciais(no.rotulo))}</span>
       <span class="opcao-rotulo">${esc(no.rotulo)}</span>
       <span class="opcao-qtd">${num(no.total)}</span>
       ${temDentro
@@ -1125,6 +1109,31 @@ function opcao(no, nivel, maior) {
           title="Ver os ${DENTRO[nivel]} de ${esc(no.rotulo)} sem filtrar">›</span>`
     : '<span class="opcao-entrar folha" aria-hidden="true"></span>'}
     </div>
+  </li>`;
+}
+
+/**
+ * O título de uma área e a lista de gente dela.
+ *
+ * O título é botão: marca a área inteira, ou desmarca se já estiver toda
+ * marcada. A marca ao lado dele mostra em que pé o grupo está — vazia, meia
+ * (parte da área marcada) ou cheia.
+ */
+function grupoDeArea(grupo, maior) {
+  const total = grupo.nos.reduce((soma, n) => soma + n.total, 0);
+  const marcados = grupo.nos.filter((n) => estado.responsaveis.has(n.valor)).length;
+  const situacao = marcados === 0 ? '' : (marcados === grupo.nos.length ? 'toda' : 'parte');
+  const dica = `${grupo.area.nome} — ${grupo.nos.length} pessoa(s), ${num(total)} atividade(s)`
+    + `\nClique para ${marcados === grupo.nos.length ? 'desmarcar' : 'marcar'} a área inteira`;
+
+  return `<li class="grupo-area ${situacao}">
+    <div class="area-topo" role="button" tabindex="0" aria-pressed="${situacao === 'toda'}"
+      data-area="${esc(grupo.area.nome)}" title="${esc(dica)}">
+      <span class="area-marca" aria-hidden="true"></span>
+      <span class="area-nome">${esc(grupo.area.nome)}</span>
+      <span class="area-qtd">${num(total)}</span>
+    </div>
+    <ul class="area-lista">${grupo.nos.map((n) => opcao(n, 0, maior)).join('')}</ul>
   </li>`;
 }
 
@@ -1142,8 +1151,13 @@ function coluna(nivel, nos) {
         <span class="coluna-escopo-nome">${esc(rotuloVisivel(nivel - 1, pai))}</span>✕</button>`
     : `<span class="coluna-escopo vazio">${nos.length ? `${num(nos.length)} no total` : '—'}</span>`;
 
+  // só o primeiro nível é gente, e só gente tem área
+  const conteudo = nivel === 0
+    ? porArea(visiveis).map((g) => grupoDeArea(g, maior)).join('')
+    : visiveis.map((n) => opcao(n, nivel, maior)).join('');
+
   const lista = visiveis.length
-    ? visiveis.map((n) => opcao(n, nivel, maior)).join('')
+    ? conteudo
     : `<li class="coluna-vazia">${termo ? 'nada encontrado' : 'nada para escolher'}</li>`;
 
   return `<div class="coluna tom-${nivel}">
@@ -1164,7 +1178,7 @@ const rotuloVisivel = (nivel, valor) =>
 
 /** Desenha as três colunas a partir do último payload carregado. */
 function montarFiltros() {
-  const el = $('#faixa-colunas');
+  const el = $('#lateral-niveis');
   const arvore = estado.dados?.arvore;
   if (!arvore) {
     el.innerHTML = '<p class="coluna-indisponivel">Indisponível — reinicie o servidor'
@@ -1185,11 +1199,19 @@ function montarChips() {
     </button>`));
 
   $('#chips-filtro').innerHTML = chips.join('');
-  $('#faixa-vazia').classList.toggle('oculto', chips.length > 0);
+  $('#lateral-vazia').classList.toggle('oculto', chips.length > 0);
   $('#btn-limpar-filtros-arvore').classList.toggle('oculto', !chips.length);
 
-  const recolhida = $('#faixa-filtros').classList.contains('recolhida');
-  $('#btn-recolher').title = `${recolhida ? 'Abrir' : 'Recolher'} a faixa de filtros`;
+  // o contador é o que sobra quando a lateral está recolhida: sem ele, fechar a
+  // barra esconderia que o painel está recortado
+  for (const id of ['#lateral-conta', '#lateral-aba-conta']) {
+    $(id).textContent = String(chips.length);
+    $(id).title = `${chips.length} filtro(s) marcado(s)`;
+    $(id).classList.toggle('oculto', !chips.length);
+  }
+
+  const recolhida = $('#lateral-filtros').classList.contains('recolhida');
+  $('#btn-recolher').title = `${recolhida ? 'Abrir' : 'Recolher'} a barra de filtros`;
 }
 
 /** Redesenha a faixa inteira — chips e colunas contam a mesma coisa. */
@@ -1252,6 +1274,29 @@ function alternarOpcao(nivel, valor) {
   carregar();
 }
 
+/**
+ * Clique no título de uma área: marca todo mundo dela, ou solta todo mundo se
+ * a área já estiver inteira marcada.
+ *
+ * Age sobre **o que está à vista**: com uma busca digitada na coluna, o título
+ * só cobre quem sobrou dela — senão o clique marcaria gente que a lista nem
+ * está mostrando.
+ */
+function alternarArea(nome) {
+  const termo = buscas[0];
+  const nos = (estado.dados?.arvore ?? [])
+    .filter((n) => areaDe(n.rotulo).nome === nome)
+    .filter((n) => !termo || n.rotulo.toLowerCase().includes(termo));
+  if (!nos.length) return;
+
+  const todos = nos.every((n) => estado.responsaveis.has(n.valor));
+  for (const n of nos) {
+    if (todos) estado.responsaveis.delete(n.valor);
+    else estado.responsaveis.add(n.valor);
+  }
+  carregar();
+}
+
 /** Abre um nó na coluna: a seguinte passa a mostrar o que tem dentro dele. */
 function abrir(nivel, valor, { redesenhar = true } = {}) {
   foco[nivel] = valor;
@@ -1272,9 +1317,12 @@ function soltarFoco(nivel) {
 }
 
 function ligarFiltros() {
-  const colunas = $('#faixa-colunas');
+  const colunas = $('#lateral-niveis');
 
   colunas.addEventListener('click', (ev) => {
+    const area = ev.target.closest('[data-area]');
+    if (area) { alternarArea(area.dataset.area); return; }
+
     const voltar = ev.target.closest('[data-limpar-foco]');
     if (voltar) { soltarFoco(Number(voltar.dataset.limparFoco)); return; }
 
@@ -1287,6 +1335,13 @@ function ligarFiltros() {
   });
 
   colunas.addEventListener('keydown', (ev) => {
+    const area = ev.target.closest?.('[data-area]');
+    if (area && (ev.key === 'Enter' || ev.key === ' ')) {
+      ev.preventDefault();
+      alternarArea(area.dataset.area);
+      return;
+    }
+
     const alvo = ev.target.closest?.('.opcao');
     if (!alvo) return;
     const nivel = Number(alvo.dataset.nivel);
@@ -1324,15 +1379,23 @@ function ligarFiltros() {
 }
 
 /**
- * Recolhe ou abre a faixa. Os cartões abaixo mudam de altura, mas não de
- * largura, e é a largura que entra no desenho dos gráficos (ver `larguraDo`) —
- * então aqui não é preciso redesenhá-los.
+ * Recolhe ou abre a lateral.
+ *
+ * Recolher devolve ~250px de largura ao painel, e a largura do cartão é o que
+ * entra no desenho dos gráficos (ver `larguraDo`) — então eles precisam ser
+ * refeitos. Depois da transição do CSS, senão sairiam com a largura de meio
+ * caminho.
  */
-function alternarFaixa() {
-  const recolhida = $('#faixa-filtros').classList.toggle('recolhida');
-  $('#btn-recolher').setAttribute('aria-expanded', String(!recolhida));
-  try { localStorage.setItem('faixa-filtros-recolhida', recolhida ? '1' : ''); } catch { /* modo privado */ }
+function alternarLateral() {
+  const recolhida = $('#lateral-filtros').classList.toggle('recolhida');
+  // os dois botões comandam a mesma coisa e se revezam na tela: um vale
+  // enquanto a lateral está aberta, o outro enquanto ela está recolhida
+  for (const id of ['#btn-recolher', '#btn-abrir-lateral']) {
+    $(id).setAttribute('aria-expanded', String(!recolhida));
+  }
+  try { localStorage.setItem('lateral-filtros-recolhida', recolhida ? '1' : ''); } catch { /* modo privado */ }
   montarChips();
+  setTimeout(desenharGraficos, 240);
 }
 
 /** Clicar num mês recorta o período nele inteiro; clicar de novo, desfaz. */
@@ -1935,16 +1998,27 @@ async function iniciar() {
   ligarFiltros();
   ligarGraficos();
 
-  // a faixa volta como o usuário a deixou — recolhê-la é uma escolha de espaço
-  // de tela, e reabrir a cada carga desfaria essa escolha toda vez
+  // O topo é grudado no alto e a lateral gruda logo abaixo dele. A altura do
+  // topo muda quando os botões quebram de linha, então ela é medida, e não
+  // escrita no CSS — o valor vira `--altura-topo`, que a lateral usa.
+  const topo = $('.topo');
+  const medirTopo = () => document.documentElement.style
+    .setProperty('--altura-topo', `${topo.offsetHeight}px`);
+  medirTopo();
+  new ResizeObserver(medirTopo).observe(topo);
+
+  // a lateral volta como o usuário a deixou — recolhê-la é uma escolha de
+  // espaço de tela, e reabrir a cada carga desfaria essa escolha toda vez
   try {
-    if (localStorage.getItem('faixa-filtros-recolhida')) {
-      $('#faixa-filtros').classList.add('recolhida');
+    if (localStorage.getItem('lateral-filtros-recolhida')) {
+      $('#lateral-filtros').classList.add('recolhida');
       $('#btn-recolher').setAttribute('aria-expanded', 'false');
+      $('#btn-abrir-lateral').setAttribute('aria-expanded', 'false');
     }
   } catch { /* modo privado: fica aberta */ }
 
-  $('#btn-recolher').addEventListener('click', alternarFaixa);
+  $('#btn-recolher').addEventListener('click', alternarLateral);
+  $('#btn-abrir-lateral').addEventListener('click', alternarLateral);
   $('#btn-limpar-filtros-arvore').addEventListener('click', () => {
     for (const dim of NIVEIS) estado[dim].clear();
     carregar();

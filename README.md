@@ -229,48 +229,76 @@ sem precisar de uma sincronização completa.
   mas a planilha leva **todas** as atividades do filtro. Datas saem como data de verdade
   (ordenável no Excel), com a primeira linha congelada e autofiltro ligado.
 
-### Faixa de filtros
+### Barra de filtros
 
 As três dimensões que antes eram listas soltas — espaços, épicos e responsável — viraram uma
-faixa só no alto do painel, com uma coluna por nível. A da esquerda estreita a do meio, e a do
-meio estreita a da direita:
+**barra lateral fixa**, à esquerda do painel, com um bloco por nível, um embaixo do outro. Ela é
+`position: sticky`: rolar o painel não tira os filtros da vista. O bloco de cima estreita o do
+meio, e o do meio estreita o de baixo:
 
 ```
-FILTROS   [Responsável Franklyn ✕] [Espaço CRM Loja ✕]        limpar  ▾
-─────────────────────┬─────────────────────┬──────────────────────────
-RESPONSÁVEL   10     │ ESPAÇO   Franklyn ✕ │ ÉPICO    CRM Loja ✕
-[filtrar…]           │ [filtrar…]          │ [filtrar…]
-● Franklyn     2.815 │ ● CRM Loja    1.614 │ ○ CRM-171 · Agosto   605
-○ Suporte TI     643 │ ○ APP Recei.  1.102 │ ○ CRM-110 · Julho    472
-○ Francisco K.   329 │ ○ NWE            50 │ ○ CRM-653 · Dezembro 238
+┌──────────────────────────────┐
+│ FILTROS                  2 ‹ │
+│ [Responsável Franklyn ✕]     │
+│ [Espaço CRM Loja ✕]          │
+│ Limpar seleção               │
+├──────────────────────────────┤
+│▌RESPONSÁVEL             10   │
+│ [filtrar…]                   │
+│ ▪ DESENVOLVIMENTO     3.566  │
+│   ● Franklyn          2.908  │
+│   ○ Lucas Ferreira      340  │
+│   ○ Davi Alexandre      318  │
+│ ▫ SUPORTE             1.004  │
+│   ○ Suporte TI          643  │
+│   ○ Francisco Kauan     361  │
+│ ▫ GESTÃO                413  │
+│   ○ Leandro Ademar      316  │
+│   ○ rafa.ti              97  │
+├──────────────────────────────┤
+│▌ESPAÇO         Franklyn ✕    │
+│ ● CRM Loja            1.614  │
+├──────────────────────────────┤
+│▌ÉPICO          CRM Loja ✕    │
+│ ○ CRM-171 · Agosto      605  │
+└──────────────────────────────┘
 ```
 
-Cada coluna tem um tom próprio — a régua no topo, a barra de proporção atrás de cada linha e a
-pílula lá em cima usam a mesma cor, e é o que diz de que coluna veio cada filtro sem precisar de
-legenda. A barra atrás do nome é o peso daquela opção no nível: dá para ver quem carrega o
-volume sem comparar número por número.
+Cada bloco tem um tom próprio — a régua na borda esquerda, a barra de proporção atrás de cada
+linha e a pílula lá em cima usam a mesma cor, e é o que diz de que bloco veio cada filtro sem
+precisar de legenda. A barra atrás do nome é o peso daquela opção no nível: dá para ver quem
+carrega o volume sem comparar número por número.
 
-- **Sem nada aberto, cada coluna mostra o nível inteiro somado.** A faixa já serve como três
+- **Os responsáveis saem agrupados por área** — Desenvolvimento, Suporte, Gestão, e "Outros"
+  para quem ainda não foi mapeado. O título da área também é botão: marca ou desmarca a área
+  inteira de uma vez, e a marca ao lado dele diz se ela está vazia, pela metade ou cheia. Com
+  uma busca digitada, o título só cobre quem sobrou da busca. Quem manda no mapeamento é a
+  constante `AREAS`, em `public/app.js`: a comparação é por pedaço do nome, sem acento e em
+  minúsculas, porque o Jira grava o nome completo do perfil e ele muda quando alguém edita a
+  conta. Ninguém some do filtro por não estar mapeado — cai em "Outros".
+- **Sem nada aberto, cada bloco mostra o nível inteiro somado.** A barra já serve como três
   listas planas; a hierarquia é o que se ganha ao entrar numa opção.
-- **Clicar numa opção marca o caminho inteiro** e abre a coluna seguinte nela. Clicar em
-  `CRM Loja` com `Franklyn` aberto à esquerda marca responsável **e** espaço: o painel passa a
-  falar do CRM Loja *do Franklyn*. Se nada estiver aberto à esquerda, marca só o espaço — não se
+- **Clicar numa opção marca o caminho inteiro** e abre o bloco seguinte nela. Clicar em
+  `CRM Loja` com `Franklyn` aberto acima marca responsável **e** espaço: o painel passa a
+  falar do CRM Loja *do Franklyn*. Se nada estiver aberto acima, marca só o espaço — não se
   passou por pessoa nenhuma, e inventar uma seria mentira.
 - **A seta `›` só navega**, sem filtrar: serve para olhar os espaços de alguém sem se
-  comprometer. **Desmarcar solta só aquele nível**, e o que está à esquerda continua valendo.
+  comprometer. **Desmarcar solta só aquele nível**, e o que está acima continua valendo.
 - Os filtros continuam sendo **conjuntos por dimensão**, e não pares. Marcar `CRM Loja` acende
   esse espaço para todo mundo que trabalha nele: o painel filtra por espaço, não por par
   pessoa-espaço.
-- O número de cada opção é a contagem de atividades dela, e **o total de uma coluna é sempre o
-  mesmo das outras** quando nada está aberto — um item tem um responsável, um espaço e um épico,
+- O número de cada opção é a contagem de atividades dela, e **o total de um bloco é sempre o
+  mesmo dos outros** quando nada está aberto — um item tem um responsável, um espaço e um épico,
   e não entra em dois lugares.
-- **As colunas ignoram as próprias três seleções**, pelo mesmo motivo dos gráficos que filtram:
-  marcar `Franklyn` não pode apagar o resto das pessoas da coluna, senão não haveria mais como
+- **Os blocos ignoram as próprias três seleções**, pelo mesmo motivo dos gráficos que filtram:
+  marcar `Franklyn` não pode apagar o resto das pessoas da lista, senão não haveria mais como
   trocar a seleção, só desfazê-la. Já **período, tipo, status e prioridade valem** — o número de
   cada opção tem que bater com o que a tela mostra.
-- Cada coluna tem a **própria busca**; o **▾** recolhe a faixa, guardando a escolha no navegador,
-  e as pílulas do cabeçalho continuam à vista dizendo o que está marcado (o **✕** de cada uma
-  solta aquele filtro).
+- Cada bloco tem a **própria busca**; o **‹** recolhe a barra a uma lombada de 46px — que segue
+  mostrando quantos filtros estão marcados —, guardando a escolha no navegador, e as pílulas do
+  topo continuam à vista dizendo o que está marcado (o **✕** de cada uma solta aquele filtro).
+- Abaixo de 1150px de largura a lateral não cabe ao lado do painel: ela volta a ser uma faixa
+  larga no alto, com os três níveis lado a lado, e abaixo de 860px eles empilham.
 
 ### Produtividade semanal por colaborador
 
@@ -319,11 +347,11 @@ prioridade valem normalmente. Três consequências:
   se a penúltima semana entra cortada pela borda, a variação e a média aparecem como `—`
   em vez de um percentual inventado contra um número incompleto.
 - **Intervalos longos são truncados em 26 semanas** (as últimas do período): mais que isso
-  vira uma parede de barras ilegível. A nota embaixo do cartão avisa quando corta.
+  vira uma parede de barras ilegível.
 
 Sem filtro de período e com a base parada (sem sincronização há semanas), a janela recua até
-a última semana com entregas em vez de mostrar oito semanas zeradas — a nota embaixo do
-cartão também avisa quando isso acontece.
+a última semana com entregas em vez de mostrar oito semanas zeradas. Nos dois casos quem diz
+qual janela está na tela é o subtítulo do cartão.
 
 ### Burndown da semana
 
@@ -344,8 +372,7 @@ reta que zeraria a fila na sexta-feira.
   Scrum ou Kanban sai de o quadro **ter ou não sprints**, não do campo `type` da API: em
   projeto gerenciado pela equipe todo quadro se declara `simple`, os dois tipos igualmente.
   Quadro Kanban sem backlog habilitado (é o caso do WIK) não deixa ninguém de fora — lá todo
-  item do quadro já é trabalho aceito. A nota do cartão diz quantas atividades do recorte
-  atual ficaram de fora.
+  item do quadro já é trabalho aceito.
 
 - **A reta parte da fila do fim da segunda** e desce até zero na sexta. As duas linhas nascem
   no mesmo ponto, e daí em diante a distância entre elas é a leitura inteira do cartão.
@@ -398,8 +425,7 @@ lateral continua contando "Épicos com tickets".
 - **Só conta ticket estimado.** Item sem story point não entra nem no numerador nem no
   denominador: contá-lo como zero puniria quem trabalha em projeto que não estima, medindo o
   processo do projeto em vez da pessoa. Suporte, Acompanhamento e Prioridades não usam o
-  campo — a nota do cartão diz quantas conclusões ficaram de fora e qual a cobertura.
-  Ponto **zero**, esse conta: zero é uma estimativa, `null` é a falta dela.
+  campo. Ponto **zero**, esse conta: zero é uma estimativa, `null` é a falta dela.
 - **Épicos ficam de fora.** Um épico pontuado carrega, por construção, a soma do que os
   filhos custam: contar os dois daria o mesmo esforço duas vezes e entregaria ao dono do
   épico o crédito do time inteiro. História e subtarefa continuam contando cada uma por si —
