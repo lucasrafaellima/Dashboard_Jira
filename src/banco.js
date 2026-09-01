@@ -47,6 +47,10 @@ function migrar(d) {
     if (!colunas.has(c)) d.exec(`ALTER TABLE itens ADD COLUMN ${c} TEXT;`);
   }
   if (!colunas.has('no_backlog')) d.exec('ALTER TABLE itens ADD COLUMN no_backlog INTEGER DEFAULT 0;');
+
+  // story points: base do ranking de desempenho. NULL = nao estimado, que e
+  // diferente de zero — ver `normalizarPontos`
+  if (!colunas.has('pontos')) d.exec('ALTER TABLE itens ADD COLUMN pontos REAL;');
 }
 
 function criarEsquema(d) {
@@ -87,6 +91,8 @@ function criarEsquema(d) {
       quadro           TEXT,
       quadro_tipo      TEXT,
       no_backlog       INTEGER DEFAULT 0,
+      -- story points; NULL = item nao estimado, diferente de zero
+      pontos           REAL,
       arquivo_origem   TEXT,
       importado_em     TEXT
     );
@@ -135,7 +141,7 @@ const CAMPOS = [
   // `quadro`, `quadro_tipo` e `no_backlog` ficam de fora de proposito: eles nao
   // vem na issue, e escrever aqui apagaria o carimbo de resolverQuadros() a
   // cada passada para reconstruir tudo em seguida
-  'sprint', 'sprint_estado',
+  'sprint', 'sprint_estado', 'pontos',
   'arquivo_origem', 'importado_em',
 ];
 

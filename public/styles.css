@@ -367,6 +367,89 @@ td.faisca-celula { width: 118px; padding-top: 4px; padding-bottom: 2px; }
 /* quem desbota e a linha; o nome dentro dela nao pode desbotar de novo */
 .linha-colab .marca.apagada { opacity: 1; }
 
+/* ------------------------------------------------------- pódio por pontos
+
+   O cartão do ranking não tem SVG: são listas. A medida que classifica (média
+   de pontos por ticket) fica sempre na mesma coluna, alinhada à direita e com
+   dígitos tabulares, para o olho descer a coluna e comparar sem reler. */
+
+.lista-ranking { list-style: none; margin: 0; padding: 0; }
+
+.linha-ranking {
+  display: grid;
+  grid-template-columns: 30px 30px 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 8px;
+  border-radius: 6px;
+}
+.linha-ranking + .linha-ranking { margin-top: 3px; }
+/* os três primeiros ganham fundo; do quarto em diante a lista fica limpa para
+   o pódio continuar sendo o que salta */
+.lista-ranking:not(.resto):not(.pequena) .linha-ranking { background: var(--azul-claro); }
+.lista-ranking:not(.resto):not(.pequena) .linha-ranking:nth-child(2) { background: #e7eef8; }
+.lista-ranking:not(.resto):not(.pequena) .linha-ranking:nth-child(3) { background: #eef3fa; }
+/* quem está marcado na faixa de filtros — o cartão não recorta por pessoa, e
+   sem isso a seleção não teria eco nenhum aqui */
+.linha-ranking.destacada { outline: 2px solid var(--azul); }
+
+.linha-ranking .posicao {
+  font-size: 17px; text-align: center;
+  color: var(--suave); font-variant-numeric: tabular-nums;
+}
+.linha-ranking .avatar {
+  display: grid; place-items: center;
+  width: 30px; height: 30px; border-radius: 50%;
+  background: var(--azul-escuro); color: #fff;
+  font-size: 11px; font-weight: 700; letter-spacing: .3px;
+}
+.linha-ranking .quem { min-width: 0; }
+.linha-ranking .quem b {
+  display: block; font-size: 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.barra-ranking {
+  display: block; height: 5px; margin-top: 4px; border-radius: 3px;
+  background: #d7e1ee; overflow: hidden;
+}
+.barra-ranking i { display: block; height: 100%; background: var(--azul); }
+
+.linha-ranking .media { text-align: right; }
+.linha-ranking .media b {
+  display: block; font-size: 19px; line-height: 1.1;
+  color: var(--azul-escuro); font-variant-numeric: tabular-nums;
+}
+.linha-ranking .media small { font-size: 9.5px; color: var(--suave); }
+.linha-ranking .apoio {
+  font-size: 11px; color: var(--suave); white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.conquistas {
+  list-style: none; margin: 12px 0 0; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px;
+}
+.conquistas li {
+  display: flex; gap: 8px; align-items: center;
+  padding: 7px 9px; border: 1px solid var(--borda); border-radius: 6px;
+  background: #fbfdff;
+}
+.conquistas .emoji { font-size: 19px; line-height: 1; }
+.conquistas b { display: block; font-size: 12px; }
+.conquistas small { display: block; font-size: 10.5px; color: var(--suave); }
+
+#ranking-tabela { margin-top: 12px; }
+.rotulo-grupo {
+  margin: 12px 0 5px; font-size: 11px; color: var(--suave);
+  text-transform: uppercase; letter-spacing: .4px;
+}
+.lista-ranking.pequena .linha-ranking { opacity: .62; }
+
+@media (max-width: 520px) {
+  .linha-ranking { grid-template-columns: 26px 26px 1fr auto; }
+  .linha-ranking .apoio { grid-column: 3 / -1; }
+}
+
 /* ------------------------------------------------------------ graficos */
 
 .area-grafico { width: 100%; }
@@ -712,7 +795,7 @@ body.travado { overflow: hidden; }
   #card-pizza              { grid-column: span 3; order: 10; }
   #card-espacos            { grid-column: span 3; order: 11; }
   #card-burndown           { grid-column: span 6; order: 12; }
-  #card-epicos             { grid-column: span 6; order: 14; }
+  #card-ranking            { grid-column: span 6; order: 14; }
   #secao-padronizacao      { grid-column: span 6; order: 15; }
 
   .cartao {
@@ -746,6 +829,21 @@ body.travado { overflow: hidden; }
   .lista-panorama li { font-size: 10px; padding-bottom: 3px; break-inside: avoid; }
 
   /* ------------------------------------------------- produtividade semanal */
+
+  /* pódio no papel: sem fundo colorido (economiza tinta e sai cinza no P&B),
+     a hierarquia fica por conta da medalha e do tamanho da média */
+  .lista-ranking .linha-ranking,
+  .lista-ranking:not(.resto):not(.pequena) .linha-ranking,
+  .lista-ranking:not(.resto):not(.pequena) .linha-ranking:nth-child(2),
+  .lista-ranking:not(.resto):not(.pequena) .linha-ranking:nth-child(3) {
+    background: none; padding: 3px 0; break-inside: avoid;
+  }
+  .linha-ranking.destacada { outline: none; font-weight: 600; }
+  .linha-ranking .avatar { background: #eef3fa; color: #1f4e79; }
+  .linha-ranking .media b { font-size: 14px; }
+  .lista-ranking.pequena .linha-ranking { opacity: 1; }
+  .conquistas { gap: 3mm; }
+  .conquistas li { padding: 4px 6px; border-radius: 3px; break-inside: avoid; }
 
   .kpis-linha { gap: 3mm; margin-bottom: 3mm; }
   .kpis-linha li { padding: 4px 6px; border-radius: 3px; break-inside: avoid; }

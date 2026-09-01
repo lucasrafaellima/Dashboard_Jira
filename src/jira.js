@@ -353,6 +353,54 @@ export async function descobrirCampoSprint(cfg) {
   return achado;
 }
 
+// ------------------------------------------------------------ story points
+
+// Como a sprint, os pontos sao custom field — e aqui sao **dois**, porque o
+// Jira usa um campo em projeto gerenciado pela empresa ("Story Points") e outro
+// no gerenciado pela equipe ("Story point estimate"). Um site com os dois tipos
+// de projeto preenche ora um, ora outro, entao a busca traz os dois e quem le a
+// issue fica com o primeiro que vier preenchido.
+const TIPOS_CAMPO_PONTOS = [
+  'com.pyxis.greenhopper.jira:jsw-story-points',
+  'com.atlassian.jira.plugin.system.customfieldtypes:float',
+];
+const NOMES_CAMPO_PONTOS = ['story points', 'story point estimate'];
+
+const camposPontosPorSite = new Map();
+
+/**
+ * Ids dos custom fields de story points neste site, na ordem de preferencia.
+ *
+ * O tipo `...:float` sozinho nao basta como criterio: ele e o tipo de qualquer
+ * campo numerico ("Valor", "Orçamento"...). Por isso o nome tambem conta, e so
+ * entra quem casa nos dois — tipo de pontos, ou tipo numerico com nome de
+ * pontos. Lista vazia = o site nao estima em pontos.
+ */
+export async function descobrirCamposPontos(cfg) {
+  if (camposPontosPorSite.has(cfg.url)) return camposPontosPorSite.get(cfg.url);
+
+  let achados = [];
+  try {
+    const campos = await requisitar(cfg, '/rest/api/3/field');
+    achados = (Array.isArray(campos) ? campos : [])
+      .filter((c) => {
+        if (!c?.custom) return false;
+        const tipo = c?.schema?.custom ?? '';
+        const nome = String(c?.name ?? '').toLowerCase();
+        if (tipo === TIPOS_CAMPO_PONTOS[0]) return true;
+        return TIPOS_CAMPO_PONTOS.includes(tipo) && NOMES_CAMPO_PONTOS.includes(nome);
+      })
+      // o campo do quadro agil primeiro: e o que o time realmente pontua
+      .sort((a, b) => (b.schema?.custom === TIPOS_CAMPO_PONTOS[0] ? 1 : 0)
+        - (a.schema?.custom === TIPOS_CAMPO_PONTOS[0] ? 1 : 0))
+      .map((c) => c.id);
+  } catch {
+    achados = [];
+  }
+  camposPontosPorSite.set(cfg.url, achados);
+  return achados;
+}
+
 // ------------------------------------------------------------ quadros ageis
 
 /**

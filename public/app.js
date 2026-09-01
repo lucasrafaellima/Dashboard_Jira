@@ -658,6 +658,144 @@ function renderizarBurndown(b) {
   ].filter(Boolean).join(' ');
 }
 
+// ------------------------------------------------------------ pódio por pontos
+
+const MEDALHAS = ['🥇', '🥈', '🥉'];
+
+/** "3,6" — uma casa, vírgula decimal, sem o ",0" pendurado nos inteiros. */
+const dec1 = (n) => Number(n ?? 0).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+
+/** Iniciais para o avatar: "Ana Paula Souza" -> "AS". */
+function iniciais(nome) {
+  const partes = String(nome).trim().split(/\s+/).filter(Boolean);
+  if (!partes.length) return '?';
+  const primeira = partes[0][0] ?? '';
+  const ultima = partes.length > 1 ? partes[partes.length - 1][0] ?? '' : '';
+  return (primeira + ultima).toUpperCase();
+}
+
+/**
+ * Uma linha do pódio ou da tabela.
+ *
+ * A barra atrás do nome é proporcional à **média do líder**, não ao máximo
+ * absoluto: é a média que classifica, então é ela que a barra tem de deixar
+ * comparar de relance.
+ */
+function linhaRanking(p, i, { topo, destacado }) {
+  const largura = topo ? Math.max(4, (p.media / topo) * 100) : 0;
+  const medalha = MEDALHAS[i] ?? `${i + 1}º`;
+  const classes = ['linha-ranking', destacado ? 'destacada' : ''].filter(Boolean).join(' ');
+  const dica = `${p.responsavel}: ${dec1(p.media)} pontos por ticket`
+    + ` — ${num(p.pontos)} pontos em ${num(p.tickets)} ticket(s) concluído(s).`
+    + ` Item mais pesado: ${dec1(p.maiorTicket)} ponto(s)${p.maiorChave ? ` (${p.maiorChave})` : ''}.`;
+
+  return `<li class="${classes}" title="${esc(dica)}">
+    <span class="posicao">${medalha}</span>
+    <span class="avatar" aria-hidden="true">${esc(iniciais(p.responsavel))}</span>
+    <span class="quem">
+      <b>${esc(p.responsavel)}</b>
+      <span class="barra-ranking"><i style="width:${largura.toFixed(1)}%"></i></span>
+    </span>
+    <span class="media"><b>${dec1(p.media)}</b><small>pts/ticket</small></span>
+    <span class="apoio">${num(p.pontos)} pts · ${num(p.tickets)} tickets</span>
+  </li>`;
+}
+
+/**
+ * Cartão do pódio: quem entregou o trabalho mais pesado, medido em story points
+ * por ticket concluído.
+ *
+ * A média classifica de propósito — total de pontos premiaria só quem pega mais
+ * volume. Para o volume não sumir da tela, ele vira conquista própria
+ * ("Maratonista", "Artilheiro") ao lado do pódio.
+ */
+function renderizarRanking(r) {
+  const sub = $('#ranking-sub');
+  const podio = $('#ranking-podio');
+  const conquistas = $('#ranking-conquistas');
+  const tabela = $('#ranking-tabela');
+  const nota = $('#ranking-nota');
+  if (!podio) return;
+
+  if (!r) {
+    sub.textContent = '';
+    podio.innerHTML = '';
+    conquistas.innerHTML = '';
+    tabela.innerHTML = vazio('Indisponível — reinicie o servidor para carregar esta métrica.');
+    nota.textContent = '';
+    return;
+  }
+
+  const todos = [...r.podio, ...r.amostraPequena];
+  if (!todos.length) {
+    sub.textContent = '';
+    podio.innerHTML = '';
+    conquistas.innerHTML = '';
+    tabela.innerHTML = vazio(r.concluidas
+      ? 'Nenhuma das atividades concluídas neste recorte tem story points.'
+      : 'Nenhuma atividade concluída neste recorte.');
+    nota.textContent = 'Story points vêm do Jira na sincronização. Projetos que não estimam'
+      + ' (Suporte, entre outros) não aparecem aqui.';
+    return;
+  }
+
+  sub.textContent = `— ${num(r.pontuadas)} tickets pontuados, ${num(r.totalPontos)} pontos`;
+
+  const topo = r.podio[0]?.media ?? 0;
+  const destaque = (nome) => estado.responsaveis.has(nome);
+
+  podio.innerHTML = `<ol class="lista-ranking">${
+    r.podio.slice(0, 3).map((p, i) => linhaRanking(p, i, { topo, destacado: destaque(p.responsavel) })).join('')
+  }</ol>`;
+
+  conquistas.innerHTML = r.conquistas.map((c) => `<li title="${esc(c.razao)}">
+    <span class="emoji" aria-hidden="true">${c.emoji}</span>
+    <span><b>${esc(c.titulo)}</b><small>${esc(c.quem)} · ${esc(c.detalhe)}</small></span>
+  </li>`).join('');
+
+  const resto = r.podio.slice(3);
+  const partes = [];
+  if (resto.length) {
+    partes.push(`<ol class="lista-ranking resto" start="4">${
+      resto.map((p, i) => linhaRanking(p, i + 3, { topo, destacado: destaque(p.responsavel) })).join('')
+    }</ol>`);
+  }
+  if (r.amostraPequena.length) {
+    // fora do pódio, mas visíveis: sumir com alguém que entregou seria pior do
+    // que mostrá-lo com a ressalva do tamanho da amostra
+    partes.push(`<p class="rotulo-grupo">Amostra pequena — menos de ${r.minTickets} tickets pontuados no período</p>`
+      + `<ul class="lista-ranking pequena">${
+        r.amostraPequena.map((p) => `<li class="linha-ranking" title="${esc(`${p.responsavel}: ${dec1(p.media)} pontos por ticket em ${num(p.tickets)} ticket(s) — amostra curta demais para classificar`)}">
+          <span class="posicao">—</span>
+          <span class="avatar" aria-hidden="true">${esc(iniciais(p.responsavel))}</span>
+          <span class="quem"><b>${esc(p.responsavel)}</b></span>
+          <span class="media"><b>${dec1(p.media)}</b><small>pts/ticket</small></span>
+          <span class="apoio">${num(p.pontos)} pts · ${num(p.tickets)} tickets</span>
+        </li>`).join('')
+      }</ul>`);
+  }
+  tabela.innerHTML = partes.join('');
+
+  nota.textContent = [
+    'Classifica pela média de pontos por ticket concluído: mede o peso do que a pessoa puxou,'
+      + ' não o volume. O volume aparece nas conquistas, logo acima.',
+    `Entra no pódio quem concluiu ao menos ${r.minTickets} tickets pontuados — abaixo disso`
+      + ' um único item grande viraria o primeiro lugar.',
+    r.semEstimativa
+      ? `${num(r.semEstimativa)} das ${num(r.concluidas)} conclusões do recorte não têm story`
+        + ` points (${dec1(r.cobertura)}% de cobertura) e ficaram de fora: Suporte, Acompanhamento`
+        + ' e Prioridades não estimam.'
+      : null,
+    r.epicos
+      ? `${num(r.epicos)} épico(s) ficaram de fora: os pontos deles já são a soma dos filhos.`
+      : null,
+    'Pai e subtarefa pontuados contam como tickets separados — é a unidade que cada pessoa'
+      + ' recebe, e a média é por ticket.',
+    'O filtro de responsável não recorta este cartão (senão o pódio teria uma pessoa só);'
+      + ' quem estiver marcado aparece destacado. Os demais filtros valem.',
+  ].filter(Boolean).join(' ');
+}
+
 // -------------------------------------------------------- produtividade semanal
 
 /**
@@ -1347,14 +1485,6 @@ function desenharGraficos() {
   em('#grafico-mensal', (largura) => barrasAgrupadas(d.serieMensal, { largura }));
   em('#grafico-burndown', (largura) => linhaBurndown(d.burndown, { largura }));
 
-  // so os 12 maiores: a lista inteira de epicos nao cabe num grafico de barras.
-  // O que estiver selecionado entra de todo jeito, senão sumiria da tela sem
-  // dar como desmarcar
-  const epicos = d.porEpico ?? [];
-  const visiveis = epicos.slice(0, 12);
-  for (const e of epicos.slice(12)) if (estado.epicos.has(e.valor)) visiveis.push(e);
-  em('#grafico-epicos', (largura) => barrasHorizontais(visiveis, { dim: 'epicos', largura }));
-
   // o cartao semanal vem do mesmo bloco de produtividade que monta a tabela ao
   // lado; um servidor antigo responde sem ele (ver renderizarProdutividade)
   const semanas = d.produtividadeSemanal?.semanas ?? [];
@@ -1394,6 +1524,7 @@ function renderizar(d, detalhe) {
 
   renderizarProdutividade(d.produtividadeSemanal);
   renderizarBurndown(d.burndown);
+  renderizarRanking(d.ranking);
   desenharGraficos();
 
   $('#panorama').innerHTML = [

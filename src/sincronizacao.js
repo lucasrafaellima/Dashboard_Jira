@@ -7,7 +7,7 @@
 import { lerConfig } from './config.js';
 import {
   paginasDeIssues, escaparJql, listarProjetos, verificarConexao, exigirAutenticacao,
-  listarChaves, CAMPOS_PADRAO, descobrirCampoSprint,
+  listarChaves, CAMPOS_PADRAO, descobrirCampoSprint, descobrirCamposPontos,
   listarQuadros, listarSprintsDoQuadro, listarBacklogDoQuadro,
 } from './jira.js';
 import { normalizarLinha, espacoDoProjeto } from './normalizar.js';
@@ -108,10 +108,12 @@ const instante = (valor) => {
 /**
  * Converte uma issue crua da API no registro gravado no banco (ou null).
  * @param {object} issue issue como a API devolveu
- * @param {string|null} [campoSprint] id do custom field da sprint neste site
- *   (ver `descobrirCampoSprint`); sem ele o item chega sem sprint
+ * @param {{campoSprint?: string|null, camposPontos?: string[]}} [campos] ids
+ *   dos custom fields deste site (ver `descobrirCampoSprint` e
+ *   `descobrirCamposPontos`); sem eles o item chega sem sprint e sem pontos
  */
-export function registroDaIssue(issue, campoSprint = null) {
+export function registroDaIssue(issue, campos = {}) {
+  const { campoSprint = null, camposPontos = [] } = campos;
   const f = issue?.fields ?? {};
   const projeto = f.project ?? {};
   const status = String(f.status?.name ?? '').trim() || 'Sem status';
@@ -149,6 +151,8 @@ export function registroDaIssue(issue, campoSprint = null) {
     concluido_em: concluidoEm,
     data_limite: f.duedate,
     sprint: campoSprint ? f[campoSprint] : null,
+    // dois campos possiveis; vale o primeiro preenchido (ver descobrirCamposPontos)
+    pontos: camposPontos.map((c) => f[c]).find((v) => v != null) ?? null,
     projeto: projeto.name,
     origem: projeto.key,
     pai: pai?.key,
@@ -241,9 +245,14 @@ async function sincronizarOrigem(cfg, alvo, ctx) {
   let marcaAgua = marcaAnterior;
   let truncado = false;
 
-  // a sprint e um custom field, entao precisa ser pedida por id (ver
-  // `descobrirCampoSprint`); sem ela no site, a consulta segue sem o campo
-  const campos = ctx.campoSprint ? [...CAMPOS_PADRAO, ctx.campoSprint] : CAMPOS_PADRAO;
+  // sprint e pontos sao custom fields, entao precisam ser pedidos por id (ver
+  // `descobrirCampoSprint` e `descobrirCamposPontos`); o que o site nao tiver
+  // simplesmente nao entra na consulta
+  const campos = [
+    ...CAMPOS_PADRAO,
+    ...(ctx.campoSprint ? [ctx.campoSprint] : []),
+    ...(ctx.camposPontos ?? []),
+  ];
 
   try {
     for await (const pagina of paginasDeIssues(cfg, jql, { limite: cfg.maxIssues, campos })) {
@@ -253,7 +262,10 @@ async function sincronizarOrigem(cfg, alvo, ctx) {
 
       const registros = [];
       for (const issue of pagina.issues) {
-        const r = registroDaIssue(issue, ctx.campoSprint);
+        const r = registroDaIssue(issue, {
+          campoSprint: ctx.campoSprint,
+          camposPontos: ctx.camposPontos,
+        });
         if (r) registros.push(r);
         const u = instante(issue?.fields?.updated);
         if (u && (!marcaAgua || u > marcaAgua)) marcaAgua = u;
@@ -395,13 +407,18 @@ export async function sincronizar(opcoes = {}) {
   const total = origens.length;
   const pausa = opcoes.pausaMs ?? cfg.pausaMs ?? PAUSA_ORIGENS_MS;
 
-  // uma consulta so para o site inteiro: o id do campo Sprint muda de site para
-  // site, e sem ele a issue chega sem saber a que sprint pertence
+  // uma consulta so para o site inteiro: os ids desses custom fields mudam de
+  // site para site, e sem eles a issue chega sem sprint e sem story points
   let campoSprint = null;
+  let camposPontos = [];
   try {
     campoSprint = await descobrirCampoSprint(cfg);
+    camposPontos = await descobrirCamposPontos(cfg);
   } catch (e) {
-    opcoes.aoProgredir?.({ fase: 'aviso', erro: `não consegui descobrir o campo Sprint: ${e.message}` });
+    opcoes.aoProgredir?.({
+      fase: 'aviso',
+      erro: `não consegui descobrir os campos Sprint/Story points: ${e.message}`,
+    });
   }
 
   opcoes.aoProgredir?.({
@@ -421,6 +438,7 @@ export async function sincronizar(opcoes = {}) {
       total,
       pausaPaginaMs: opcoes.pausaPaginaMs ?? 0,
       campoSprint,
+      camposPontos,
     };
 
     try {

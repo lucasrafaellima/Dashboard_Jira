@@ -5,7 +5,7 @@
 // e o snapshot baixado do Firestore. Assim o mesmo motor roda nos dois lados.
 import {
   ehConcluida, SEM_RESPONSAVEL, ORDEM_PRIORIDADE, CATEGORIAS, SEM_EPICO, rotuloEpico,
-  dataDeConclusao, ehDeSprint,
+  dataDeConclusao, ehDeSprint, ehEpico,
 } from './normalizar.js';
 
 /** Chave usada nos filtros de epico: a chave da issue, ou "(sem épico)". */
@@ -509,6 +509,157 @@ function burndownSemanal(base, { inicio, incluirCancelados }) {
   };
 }
 
+// ------------------------------------------------------------ ranking por pontos
+
+/**
+ * Minimo de tickets pontuados para disputar o podio.
+ *
+ * A classificacao e por **media** de pontos por ticket, e media de amostra
+ * minuscula nao mede desempenho: quem fechou um unico item de 13 pontos ficaria
+ * eternamente em primeiro sobre quem entregou vinte. Abaixo do corte a pessoa
+ * nao some — sai do podio e aparece na lista de "amostra pequena", com os
+ * numeros dela visiveis e a razao dita na tela.
+ */
+const MIN_TICKETS_RANKING = 3;
+
+/** Uma casa decimal, sem o ruido de ponto flutuante. */
+const arred1 = (n) => Math.round(n * 10) / 10;
+
+/**
+ * Ranking de desempenho por story points, entre as atividades **concluidas no
+ * periodo**.
+ *
+ * A classificacao e pela **media de pontos por ticket**: mede o peso do que a
+ * pessoa puxou, nao o volume. Quem fecha muita coisa pequena nao passa na
+ * frente de quem fecha pouca coisa grande — e o oposto tambem vale, por isso o
+ * total de pontos e a contagem de tickets ficam visiveis ao lado, e cada um
+ * deles ainda rende uma conquista propria.
+ *
+ * Tres decisoes que mudam quem aparece:
+ *
+ *   - **so conta ticket estimado**. Item sem story point nao entra nem no
+ *     numerador nem no denominador; entrar como zero puxaria a media de quem
+ *     trabalha num projeto que nao pontua para baixo, medindo o processo do
+ *     projeto em vez da pessoa. Quantos ficaram de fora sai em `semEstimativa`.
+ *   - **ponto zero conta**. Zero e uma estimativa ("isso nao custa nada"), e
+ *     `null` e a falta dela — ver `normalizarPontos`.
+ *   - **sem responsavel nao disputa**. "(vazio)" nao e uma pessoa, e liderar o
+ *     ranking com o trabalho de ninguem seria so um bug bonito.
+ *   - **epico nao e trabalho de ninguem**. Um epico pontuado carrega, por
+ *     construcao, a soma do que os filhos dele custam — contar os dois daria o
+ *     mesmo esforco duas vezes, e daria ao dono do epico o credito do time
+ *     inteiro. Historia e subtarefa continuam contando cada uma por si: sao as
+ *     unidades que as pessoas realmente recebem, e a media e **por ticket**.
+ *
+ * @param {object[]} concluidas atividades ja recortadas pelo periodo e filtros
+ * @returns {object} podio, amostra pequena, conquistas e o rodape de cobertura
+ */
+function rankingPorPontos(concluidas) {
+  const porPessoa = new Map();
+  let semEstimativa = 0;
+  let semResponsavel = 0;
+  let epicos = 0;
+
+  for (const it of concluidas) {
+    if (ehEpico(it.tipo_item)) { epicos++; continue; }
+    const pontos = it.pontos;
+    if (pontos == null || !Number.isFinite(pontos)) { semEstimativa++; continue; }
+    if (!it.responsavel || it.responsavel === SEM_RESPONSAVEL) { semResponsavel++; continue; }
+
+    if (!porPessoa.has(it.responsavel)) {
+      porPessoa.set(it.responsavel, {
+        responsavel: it.responsavel,
+        tickets: 0,
+        pontos: 0,
+        maiorTicket: 0,
+        // a chave do item mais pesado, para a conquista poder apontar qual foi
+        maiorChave: null,
+      });
+    }
+    const p = porPessoa.get(it.responsavel);
+    p.tickets++;
+    p.pontos += pontos;
+    if (pontos > p.maiorTicket) { p.maiorTicket = pontos; p.maiorChave = it.chave ?? null; }
+  }
+
+  const todos = [...porPessoa.values()].map((p) => ({
+    ...p,
+    pontos: arred1(p.pontos),
+    media: arred1(p.pontos / p.tickets),
+  }));
+
+  // desempate: media, depois total de pontos, depois nome — sem o segundo
+  // criterio duas pessoas com media 3,0 trocariam de lugar a cada carregamento
+  const ordenar = (a, b) => b.media - a.media
+    || b.pontos - a.pontos
+    || a.responsavel.localeCompare(b.responsavel, 'pt-BR');
+
+  const podio = todos.filter((p) => p.tickets >= MIN_TICKETS_RANKING).sort(ordenar);
+  const amostraPequena = todos.filter((p) => p.tickets < MIN_TICKETS_RANKING).sort(ordenar);
+
+  // As conquistas saem de **todo mundo** que pontuou, nao so do podio: o corte
+  // de amostra existe para nao coroar media de um ticket so, e nao para negar a
+  // quem fez o item mais pesado da semana o credito por ele.
+  const maiorPor = (chave) => todos.reduce(
+    (melhor, p) => (melhor === null || p[chave] > melhor[chave] ? p : melhor),
+    null,
+  );
+  const lider = podio[0] ?? null;
+  const conquistas = [
+    lider && {
+      id: 'peso-pesado',
+      emoji: '🏋️',
+      titulo: 'Peso pesado',
+      quem: lider.responsavel,
+      detalhe: `${arred1(lider.media).toFixed(1).replace('.', ',')} pontos por ticket`,
+      razao: 'A maior média de pontos por ticket — puxou o trabalho mais pesado.',
+    },
+    maiorPor('pontos') && {
+      id: 'maratonista',
+      emoji: '🏃',
+      titulo: 'Maratonista',
+      quem: maiorPor('pontos').responsavel,
+      detalhe: `${maiorPor('pontos').pontos} pontos no total`,
+      razao: 'Somou mais story points no período, contando tudo o que fechou.',
+    },
+    maiorPor('tickets') && {
+      id: 'artilheiro',
+      emoji: '🎯',
+      titulo: 'Artilheiro',
+      quem: maiorPor('tickets').responsavel,
+      detalhe: `${maiorPor('tickets').tickets} tickets concluídos`,
+      razao: 'Fechou mais atividades pontuadas, independente do tamanho delas.',
+    },
+    maiorPor('maiorTicket')?.maiorTicket > 0 && {
+      id: 'escalador',
+      emoji: '⛰️',
+      titulo: 'Escalador',
+      quem: maiorPor('maiorTicket').responsavel,
+      detalhe: `${maiorPor('maiorTicket').maiorTicket} pontos`
+        + (maiorPor('maiorTicket').maiorChave ? ` em ${maiorPor('maiorTicket').maiorChave}` : ''),
+      razao: 'Entregou o ticket mais pesado do período — o maior item sozinho.',
+    },
+  ].filter(Boolean);
+
+  const elegiveis = concluidas.length - epicos;
+  const pontuadas = elegiveis - semEstimativa;
+  return {
+    podio,
+    amostraPequena,
+    conquistas,
+    minTickets: MIN_TICKETS_RANKING,
+    // rodape de honestidade: de quantas conclusoes o cartao esta realmente falando
+    concluidas: concluidas.length,
+    pontuadas,
+    semEstimativa,
+    semResponsavel,
+    epicos,
+    cobertura: elegiveis ? arred1((pontuadas / elegiveis) * 100) : 0,
+    totalPontos: arred1(todos.reduce((s, p) => s + p.pontos, 0)),
+    participantes: todos.length,
+  };
+}
+
 /** Tempo em dias entre criacao e conclusao (mediana + media). */
 function tempoDeConclusao(concluidas) {
   const dias = [];
@@ -825,7 +976,14 @@ export function montarDashboard(fonte, filtros = {}) {
     porCategoria: contarNaOrdem(itens, 'status_categoria', CATEGORIAS),
     // o cartao diz "Tickets criados por espaços": so as criadas no periodo
     porEspaco: semDim('espacos', (c) => contarPor(c.criadas, 'espaco')),
+    // sem cartao proprio desde que o ranking tomou o lugar dele; sobrou porque
+    // o painel ainda conta "Épicos com tickets" e o filtro de épico continua
     porEpico: semDim('epicos', (c) => contarPorEpico(c.universo)),
+    // Ranking de desempenho por story points. Ignora o filtro de responsável,
+    // como a pizza ao lado: a graça do pódio é comparar as pessoas entre si, e
+    // marcar alguém na faixa de filtros deixaria um pódio de uma pessoa só,
+    // sem como trocar a seleção. Os demais filtros valem normalmente.
+    ranking: semDim('responsaveis', (c) => rankingPorPontos(c.concluidas)),
     porTipo: semDim('tipos', (c) => contarPor(c.universo, 'tipo_item')),
     porPrioridade: semDim('prioridades', (c) => contarNaOrdem(c.universo, 'prioridade', ORDEM_PRIORIDADE)),
     concluidasPorResponsavel: semDim(

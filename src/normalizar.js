@@ -66,6 +66,11 @@ for (const [alias, campo] of [
   ['epic name', 'epico_resumo'],
   // sprint: a exportacao repete a coluna uma vez por sprint da issue
   ['sprint', 'sprint'],
+  // story points: dois nomes, conforme o projeto seja gerenciado pela empresa
+  // ou pela equipe — os dois caem no mesmo campo interno
+  ['story points', 'pontos'],
+  ['story point estimate', 'pontos'],
+  ['pontos de historia', 'pontos'],
 ]) POR_TITULO.set(chaveComparacao(alias), campo);
 
 /** Mapeia um cabecalho da planilha para o campo interno (ou null). */
@@ -268,6 +273,20 @@ export function normalizarSprint(valor) {
     return { sprint: '', sprint_estado: '' };
   }
   return umaSprint(valor);
+}
+
+/**
+ * Story points do item, ou `null` quando ele nao foi estimado.
+ *
+ * Zero e um valor legitimo (item que o time decidiu nao pontuar) e nao vira
+ * `null`: sao coisas diferentes, e a media por ticket do ranking conta um e
+ * ignora o outro. Texto com virgula decimal vem de planilha em pt-BR.
+ */
+export function normalizarPontos(valor) {
+  if (valor == null || valor === '') return null;
+  const n = typeof valor === 'number' ? valor : Number(String(valor).trim().replace(',', '.'));
+  if (!Number.isFinite(n) || n < 0) return null;
+  return n;
 }
 
 /**
@@ -532,6 +551,7 @@ export function normalizarLinha(bruto) {
     // consultar o quadro, e so `resolverQuadros()` os carimba
     sprint,
     sprint_estado: sprintEstado,
+    pontos: normalizarPontos(bruto.pontos),
     pai,
     pai_tipo: pai ? normalizarTipo(bruto.pai_tipo) : '',
     pai_resumo: pai ? String(bruto.pai_resumo ?? '').trim() : '',

@@ -209,12 +209,13 @@ sem precisar de uma sincronização completa.
 - **Produtividade semanal por colaborador** — ranking das conclusões da semana com o
   comparativo das semanas anteriores (detalhes [abaixo](#produtividade-semanal-por-colaborador)).
 - **Burndown da semana** — de segunda a sexta (detalhes [abaixo](#burndown-da-semana)).
-- **Extras**: evolução mensal (criadas × concluídas), tickets por épico, tempo médio/mediano até concluir, itens sem responsável, itens com data limite vencida, e a tabela detalhada.
+- **Pódio da complexidade** — ranking por story points (detalhes [abaixo](#pódio-da-complexidade)).
+- **Extras**: evolução mensal (criadas × concluídas), tempo médio/mediano até concluir, itens sem responsável, itens com data limite vencida, e a tabela detalhada.
 - Botão **PDF** usa a impressão do navegador, mas o que sai é um relatório, não uma foto da tela:
   - **A4 paisagem**, com capa (período coberto, filtros aplicados, data de geração e site do Jira
     de origem) e rodapé repetido em todas as páginas;
   - a ordem muda para leitura: KPIs → status e panorama → evolução mensal → produtividade
-    semanal → demais gráficos → padronização de status;
+    semanal → demais gráficos → burndown → pódio da complexidade → padronização de status;
   - ficam de fora os controles, a faixa de filtros, a tabela de atividades (essa vai no Excel)
     e as tabelas operacionais de sincronização e importação. O que estava marcado na faixa
     sai na **capa**, no bloco de filtros aplicados — é o que interessa no papel; as três
@@ -371,6 +372,45 @@ reta que zeraria a fila na sexta-feira.
   API ágil dos quadros), e são gravados na base a cada passada da sincronização. Base
   importada só de planilha, ou sincronizada antes desta versão, aparece com o aviso *“a base
   ainda não tem informação de sprint”* até a próxima sincronização.
+
+### Pódio da complexidade
+
+Quem entregou o trabalho mais **pesado** no período, medido em story points. Substituiu o
+cartão "Tickets por épico" — o filtro de épico continua na faixa de filtros, e o painel
+lateral continua contando "Épicos com tickets".
+
+- **Classifica pela média de pontos por ticket concluído**, não pelo total. Total premiaria
+  só quem pega mais volume; a média mostra quem puxou o que custa caro. Para o volume não
+  sumir, ele vira conquista própria ao lado (*Maratonista*, *Artilheiro*).
+- **Precisa de amostra**: entra no pódio quem concluiu ao menos **3 tickets pontuados**.
+  Sem esse corte, quem fechou um único item de 13 pontos lideraria para sempre sobre quem
+  entregou vinte. Quem fica abaixo não some — aparece em *Amostra pequena*, com os números
+  à mostra e o motivo dito na tela.
+- **Quatro conquistas**, todas calculadas sobre quem pontuou (não só sobre o pódio):
+
+  | | Conquista | Quem leva |
+  |---|---|---|
+  | 🏋️ | Peso pesado | maior média de pontos por ticket |
+  | 🏃 | Maratonista | mais pontos somados no período |
+  | 🎯 | Artilheiro | mais tickets concluídos |
+  | ⛰️ | Escalador | o ticket mais pesado, sozinho |
+
+- **Só conta ticket estimado.** Item sem story point não entra nem no numerador nem no
+  denominador: contá-lo como zero puniria quem trabalha em projeto que não estima, medindo o
+  processo do projeto em vez da pessoa. Suporte, Acompanhamento e Prioridades não usam o
+  campo — a nota do cartão diz quantas conclusões ficaram de fora e qual a cobertura.
+  Ponto **zero**, esse conta: zero é uma estimativa, `null` é a falta dela.
+- **Épicos ficam de fora.** Um épico pontuado carrega, por construção, a soma do que os
+  filhos custam: contar os dois daria o mesmo esforço duas vezes e entregaria ao dono do
+  épico o crédito do time inteiro. História e subtarefa continuam contando cada uma por si —
+  são as unidades que as pessoas recebem, e a média é *por ticket*.
+- **Sem responsável não disputa.** `(vazio)` não é uma pessoa.
+- **O filtro de responsável não recorta este cartão**, como na pizza ao lado: marcar alguém
+  deixaria um pódio de uma pessoa só, sem como trocar a seleção. Quem está marcado aparece
+  destacado. Espaço, épico, período, tipo e prioridade valem normalmente.
+- **Vem da sincronização com a API**: os pontos saem do campo `Story point estimate`
+  (projeto gerenciado pela equipe) ou `Story Points` (gerenciado pela empresa) — o dashboard
+  procura os dois e usa o que estiver preenchido.
 
 ### O que conta como concluída
 
